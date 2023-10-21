@@ -3,7 +3,7 @@ use std::env;
 use actix_web::web::{self, scope, Data};
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 
-use crate::api::create_quote;
+use crate::api::endpoints::create_quote;
 
 #[derive(Debug)]
 pub struct AppState {

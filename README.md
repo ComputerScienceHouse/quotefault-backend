@@ -37,3 +37,28 @@ Reports a quote
 ### GET /api/reports
 
 Returns a list of quotes which 
+
+## Database Schema
+
+### Quotes Table
+
+```SQL
+CREATE TABLE Quotes (
+    id SERIAL NOT NULL,
+    submitter VARCHAR(32) NOT NULL,
+    timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    hidden BOOL NOT NULL DEFAULT FALSE,
+    reported BOOL NOT NULL DEFAULT FALSE
+);
+```
+
+### Quote Shards Table
+
+```SQL
+CREATE TABLE Shards (
+    quote_id INT NOT NULL,
+    index SMALLINT NOT NULL,
+    body TEXT NOT NULL,
+    speaker VARCHAR(32) NOT NULL
+);
+```
