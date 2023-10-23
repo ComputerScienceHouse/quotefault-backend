@@ -1,6 +1,6 @@
 use actix_web::{
-    post,
-    web::{Data, Json},
+    get, post,
+    web::{self, Data, Json},
     HttpResponse, Responder,
 };
 use log::{log, Level};
@@ -9,8 +9,8 @@ use sqlx::{query, query_as};
 use crate::{
     api::db::{log_query, log_query_as, open_transaction},
     app::AppState,
-    schema::api::NewQuote,
-    schema::db::ID,
+    schema::api::{FetchParams, NewQuote, QuoteResponse, QuoteShardResponse},
+    schema::db::{QuoteShard, ID},
 };
 
 #[post("/quote")]
@@ -70,11 +70,81 @@ pub async fn create_quote(state: Data<AppState>, body: Json<NewQuote>) -> impl R
         Err(res) => return res,
     }
 
+    log!(Level::Trace, "created quote shards");
+
     match transaction.commit().await {
         Ok(_) => HttpResponse::Ok().body(""),
         Err(e) => {
             log!(Level::Error, "Transaction failed to commit");
             HttpResponse::InternalServerError().body(e.to_string())
         }
+    }
+}
+
+#[get("/quotes")]
+pub async fn get_quotes(state: Data<AppState>, params: web::Query<FetchParams>) -> impl Responder {
+    let limit: i64 = params.limit.unwrap_or(10).into();
+    let offset: i64 = params.offset.unwrap_or(0).into();
+    let query: String = format!(
+        "%{}%",
+        params.q.clone().unwrap_or(String::new()).to_lowercase()
+    );
+    let speaker = params.speaker.clone().unwrap_or("%".to_string());
+    let submitter = params.submitter.clone().unwrap_or("%".to_string());
+    match log_query_as(
+        query_as!(
+            QuoteShard,
+            "SELECT pq.id as \"id!\", s.index as \"index!\", pq.submitter as \"submitter!\",
+            pq.timestamp as \"timestamp!\", s.body as \"body!\", s.speaker as \"speaker!\"
+            FROM (
+                SELECT * FROM quotes q
+                WHERE NOT hidden
+                AND submitter LIKE $5
+                AND q.id IN (
+                    SELECT quote_id FROM shards s
+                    WHERE LOWER(body) LIKE $3
+                    AND speaker LIKE $4
+                )
+                ORDER BY q.id DESC
+                LIMIT $1
+                OFFSET $2
+            ) AS pq
+            LEFT JOIN shards s ON s.quote_id = pq.id
+            ORDER BY pq.id DESC, s.index",
+            limit,
+            offset,
+            query,
+            speaker,
+            submitter,
+        )
+        .fetch_all(&state.db)
+        .await,
+        None,
+    )
+    .await
+    {
+        Ok((_, shards)) => {
+            let mut quotes: Vec<QuoteResponse> = Vec::new();
+            for shard in shards {
+                if shard.index == 1 {
+                    quotes.push(QuoteResponse {
+                        id: shard.id,
+                        shards: vec![QuoteShardResponse {
+                            body: shard.body,
+                            speaker: shard.speaker,
+                        }],
+                        submitter: shard.submitter,
+                        timestamp: shard.timestamp,
+                    });
+                } else {
+                    quotes.last_mut().unwrap().shards.push(QuoteShardResponse {
+                        body: shard.body,
+                        speaker: shard.speaker,
+                    });
+                }
+            }
+            HttpResponse::Ok().json(quotes)
+        }
+        Err(res) => res,
     }
 }

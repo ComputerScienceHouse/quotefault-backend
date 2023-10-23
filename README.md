@@ -17,7 +17,7 @@ Queries a list of quotes. With no parameters it returns the most recent 10 quote
 #### Params
 
 * `q={query}` - Searches the quotes for a list of space separates keywords
-* `page={num}` - The page index (default: 0)
+* `offset={num}` - The page index (default: 0)
 * `limit={num}` - The maximum number of entries to return (default: 10)
 * `submitter={username}` - Filters for quotes submitted by a certain user
 * `speaker={username}` - Filters for quotes said by a certain user
@@ -30,13 +30,13 @@ Hides a quote
 
 Unhides a quote
 
-### POST /api/report/{qid}
+### PUT /api/report/{qid}
 
 Reports a quote
 
 ### GET /api/reports
 
-Returns a list of quotes which 
+Returns a list of quotes which
 
 ## Database Schema
 
@@ -44,7 +44,7 @@ Returns a list of quotes which
 
 ```SQL
 CREATE TABLE Quotes (
-    id SERIAL NOT NULL,
+    id INT4 PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
     submitter VARCHAR(32) NOT NULL,
     timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     hidden BOOL NOT NULL DEFAULT FALSE,
@@ -56,9 +56,10 @@ CREATE TABLE Quotes (
 
 ```SQL
 CREATE TABLE Shards (
-    quote_id INT NOT NULL,
+    quote_id INT4 REFERENCES quotes(id) NOT NULL,
     index SMALLINT NOT NULL,
     body TEXT NOT NULL,
-    speaker VARCHAR(32) NOT NULL
+    speaker VARCHAR(32) NOT NULL,
+    PRIMARY KEY (quote_id, index)
 );
 ```
