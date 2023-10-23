@@ -9,6 +9,7 @@ use sqlx::{query, query_as};
 use crate::{
     api::db::{log_query, log_query_as, open_transaction},
     app::AppState,
+    auth::CSHAuth,
     ldap,
     schema::api::{FetchParams, NewQuote, QuoteResponse, QuoteShardResponse},
     schema::{
@@ -18,7 +19,7 @@ use crate::{
     utils::is_valid_username,
 };
 
-#[post("/quote")]
+#[post("/quote", wrap = "CSHAuth::enabled()")]
 pub async fn create_quote(state: Data<AppState>, body: Json<NewQuote>) -> impl Responder {
     log!(Level::Info, "POST /api/quote");
 
@@ -100,7 +101,7 @@ pub async fn create_quote(state: Data<AppState>, body: Json<NewQuote>) -> impl R
     }
 }
 
-#[get("/quotes")]
+#[get("/quotes", wrap = "CSHAuth::enabled()")]
 pub async fn get_quotes(state: Data<AppState>, params: web::Query<FetchParams>) -> impl Responder {
     let limit: i64 = params.limit.unwrap_or(10).into();
     let offset: i64 = params.offset.unwrap_or(0).into();
@@ -168,7 +169,7 @@ pub async fn get_quotes(state: Data<AppState>, params: web::Query<FetchParams>) 
     }
 }
 
-#[get("/users")]
+#[get("/users", wrap = "CSHAuth::enabled()")]
 pub async fn get_users(state: Data<AppState>) -> impl Responder {
     match ldap::get_group_members(&state.ldap, "member").await {
         Ok(users) => HttpResponse::Ok().json(
