@@ -15,6 +15,7 @@ use crate::{
         api::UserResponse,
         db::{QuoteShard, ID},
     },
+    utils::is_valid_username,
 };
 
 #[post("/quote")]
@@ -27,11 +28,25 @@ pub async fn create_quote(state: Data<AppState>, body: Json<NewQuote>) -> impl R
     if body.shards.len() > 50 {
         return HttpResponse::BadRequest().body("Maximum of 50 shards exceeded.");
     }
-    if body.shards.iter().any(|s| s.speaker.len() > 32) {
-        return HttpResponse::BadRequest().body("Maximum speaker name length exceeded.");
+    if body
+        .shards
+        .iter()
+        .any(|x| !is_valid_username(x.speaker.as_str()))
+    {
+        return HttpResponse::BadRequest().body("Invalid speaker username specified.");
     }
-    if body.submitter.len() > 32 {
-        return HttpResponse::BadRequest().body("Maximum submitter name length exceeded.");
+    if !is_valid_username(body.submitter.as_str()) {
+        return HttpResponse::BadRequest().body("Invalid submitter username specified.");
+    }
+    let mut users: Vec<String> = body.shards.iter().map(|x| x.speaker.clone()).collect();
+    users.push(body.submitter.clone());
+    match ldap::users_exist(&state.ldap, users).await {
+        Ok(exists) => {
+            if !exists {
+                return HttpResponse::BadRequest().body("Some users submitted do not exist.");
+            }
+        }
+        Err(err) => return HttpResponse::InternalServerError().body(err.to_string()),
     }
 
     let mut transaction = match open_transaction(&state.db).await {

@@ -5,7 +5,6 @@ use quotefault_backend::app::{configure_app, get_app_data};
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     dotenv().ok();
-    println!("Hello, world!");
     let app_data = get_app_data().await;
     HttpServer::new(move || {
         App::new()

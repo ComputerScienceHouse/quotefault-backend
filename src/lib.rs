@@ -1,5 +1,6 @@
 pub mod app;
 pub mod ldap;
+pub mod utils;
 
 pub mod schema {
     pub mod api;

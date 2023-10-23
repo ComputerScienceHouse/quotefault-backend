@@ -69,6 +69,26 @@ pub async fn get_user(client: &LdapClient, user: &str) -> Result<Vec<LdapUser>, 
         .collect())
 }
 
+pub async fn users_exist(client: &LdapClient, users: Vec<String>) -> Result<bool, anyhow::Error> {
+    let res = ldap_search(
+        client,
+        "cn=users,cn=accounts,dc=csh,dc=rit,dc=edu",
+        format!(
+            "(|{})",
+            users
+                .iter()
+                .map(|x| format!("(uid={})", x))
+                .collect::<Vec<String>>()
+                .join("")
+        )
+        .as_str(),
+        None,
+    )
+    .await?;
+
+    Ok(users.len() == res.len())
+}
+
 pub async fn search_users(
     client: &LdapClient,
     query: &str,
