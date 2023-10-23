@@ -9,8 +9,12 @@ use sqlx::{query, query_as};
 use crate::{
     api::db::{log_query, log_query_as, open_transaction},
     app::AppState,
+    ldap,
     schema::api::{FetchParams, NewQuote, QuoteResponse, QuoteShardResponse},
-    schema::db::{QuoteShard, ID},
+    schema::{
+        api::UserResponse,
+        db::{QuoteShard, ID},
+    },
 };
 
 #[post("/quote")]
@@ -146,5 +150,21 @@ pub async fn get_quotes(state: Data<AppState>, params: web::Query<FetchParams>) 
             HttpResponse::Ok().json(quotes)
         }
         Err(res) => res,
+    }
+}
+
+#[get("/users")]
+pub async fn get_users(state: Data<AppState>) -> impl Responder {
+    match ldap::get_group_members(&state.ldap, "member").await {
+        Ok(users) => HttpResponse::Ok().json(
+            users
+                .into_iter()
+                .map(|x| UserResponse {
+                    uid: x.uid,
+                    cn: x.cn,
+                })
+                .collect::<Vec<_>>(),
+        ),
+        Err(err) => HttpResponse::InternalServerError().body(err.to_string()),
     }
 }

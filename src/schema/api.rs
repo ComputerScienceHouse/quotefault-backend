@@ -34,3 +34,9 @@ pub struct QuoteShardResponse {
     pub body: String,
     pub speaker: String,
 }
+
+#[derive(Serialize, Debug)]
+pub struct UserResponse {
+    pub cn: String,
+    pub uid: String,
+}
