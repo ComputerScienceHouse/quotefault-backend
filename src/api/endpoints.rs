@@ -9,7 +9,7 @@ use sqlx::{query, query_as};
 use crate::{
     api::db::{log_query, log_query_as, open_transaction},
     app::AppState,
-    auth::CSHAuth,
+    auth::{CSHAuth, User},
     ldap,
     schema::api::{FetchParams, NewQuote, QuoteResponse, QuoteShardResponse},
     schema::{
@@ -20,7 +20,11 @@ use crate::{
 };
 
 #[post("/quote", wrap = "CSHAuth::enabled()")]
-pub async fn create_quote(state: Data<AppState>, body: Json<NewQuote>) -> impl Responder {
+pub async fn create_quote(
+    state: Data<AppState>,
+    body: Json<NewQuote>,
+    user: User,
+) -> impl Responder {
     log!(Level::Info, "POST /api/quote");
 
     if body.shards.is_empty() {
@@ -34,13 +38,14 @@ pub async fn create_quote(state: Data<AppState>, body: Json<NewQuote>) -> impl R
         .iter()
         .any(|x| !is_valid_username(x.speaker.as_str()))
     {
-        return HttpResponse::BadRequest().body("Invalid speaker username specified.");
+        return HttpResponse::BadRequest().body("Invalid speaker username format specified.");
     }
-    if !is_valid_username(body.submitter.as_str()) {
-        return HttpResponse::BadRequest().body("Invalid submitter username specified.");
+    if !is_valid_username(user.preferred_username.as_str()) {
+        return HttpResponse::BadRequest()
+            .body("Invalid submitter username specified. SHOULD NEVER HAPPEN!");
     }
     let mut users: Vec<String> = body.shards.iter().map(|x| x.speaker.clone()).collect();
-    users.push(body.submitter.clone());
+    users.push(user.preferred_username.clone());
     match ldap::users_exist(&state.ldap, users).await {
         Ok(exists) => {
             if !exists {
@@ -60,7 +65,7 @@ pub async fn create_quote(state: Data<AppState>, body: Json<NewQuote>) -> impl R
         query_as!(
             ID,
             "INSERT INTO quotes(submitter) VALUES ($1) RETURNING id",
-            body.submitter
+            user.preferred_username
         )
         .fetch_all(&state.db)
         .await,

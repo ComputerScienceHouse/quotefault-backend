@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct NewQuote {
-    pub submitter: String,
     pub shards: Vec<NewQuoteShard>,
 }
 
