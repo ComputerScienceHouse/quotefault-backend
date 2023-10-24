@@ -7,6 +7,7 @@ use actix_web::{
 use anyhow::{anyhow, Result};
 use base64::{engine::general_purpose, Engine as _};
 use futures::{executor::block_on, future::LocalBoxFuture, lock::Mutex};
+use isahc::ReadResponseExt;
 use lazy_static::lazy_static;
 use openssl::{
     bn::BigNum,
@@ -16,9 +17,9 @@ use openssl::{
     sign::Verifier,
 };
 use serde::{Deserialize, Serialize};
-use std::env;
 use std::{
     collections::HashMap,
+    env,
     future::{ready, Ready},
     sync::Arc,
     task::{Context, Poll},
@@ -152,12 +153,11 @@ fn verify_token(
     }
 
     let data_cache = JWT_CACHE.clone();
-    let cache = block_on(data_cache.lock());
+    let mut cache = block_on(data_cache.lock());
     let pkey = match cache.get(header.kid.as_str()) {
         Some(x) => Some(x),
         None => {
-            let data_cache = JWT_CACHE.clone();
-            block_on(update_cache(data_cache.clone())).unwrap();
+            update_cache(&mut cache).unwrap();
             cache.get(header.kid.as_str())
         }
     };
@@ -335,14 +335,13 @@ struct CertData {
     keys: Vec<CertKey>,
 }
 
-pub async fn update_cache(cache: Arc<Mutex<HashMap<String, PKey<Public>>>>) -> Result<()> {
+pub fn update_cache(cache: &mut HashMap<String, PKey<Public>>) -> Result<()> {
     let cert_data: CertData =
-        reqwest::get("https://sso.csh.rit.edu/auth/realms/csh/protocol/openid-connect/certs")
-            .await?
+        isahc::get("https://sso.csh.rit.edu/auth/realms/csh/protocol/openid-connect/certs")
+            .unwrap()
             .json()
-            .await?;
+            .unwrap();
 
-    let mut cache = cache.lock().await;
     for key in cert_data.keys {
         if cache.contains_key(key.kid.as_str()) {
             continue;
