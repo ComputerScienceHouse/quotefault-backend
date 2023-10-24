@@ -6,14 +6,14 @@
 
 Creates a quote
 
-#### Data
+#### Post Data
 
 ```json
 {
     "shards": [
         {
-            "body": "Quote body.",
-            "speaker": "username"
+            "body": "Erm... what the spruce?",
+            "speaker": "mcdade"
         }
     ]
 }
@@ -30,6 +30,27 @@ Queries a list of quotes. With no parameters it returns the most recent 10 quote
 * `limit={num}` - The maximum number of entries to return (default: 10)
 * `submitter={username}` - Filters for quotes submitted by a certain user
 * `speaker={username}` - Filters for quotes said by a certain user
+
+#### Response
+```json
+{
+    "submitter": {
+        "cn": "Cole Stowell",
+        "uid": "cole"
+    },
+    "timestamp": "2023-10-24T22:03:08.254364",
+    "shards": [
+        {
+            "body": "Erm... what the spruce?",
+            "speaker": {
+                "cn": "Wilson McDade",
+                "uid": "mcdade"
+            }
+        }
+    ],
+    "id": 26
+}
+```
 
 ### PUT /api/hide/{qid}
 

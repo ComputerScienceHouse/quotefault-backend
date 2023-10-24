@@ -22,7 +22,7 @@ pub struct FetchParams {
 
 #[derive(Serialize, Debug)]
 pub struct QuoteResponse {
-    pub submitter: String,
+    pub submitter: UserResponse,
     pub timestamp: chrono::NaiveDateTime,
     pub shards: Vec<QuoteShardResponse>,
     pub id: i32,
@@ -31,7 +31,7 @@ pub struct QuoteResponse {
 #[derive(Serialize, Debug)]
 pub struct QuoteShardResponse {
     pub body: String,
-    pub speaker: String,
+    pub speaker: UserResponse,
 }
 
 #[derive(Serialize, Debug)]

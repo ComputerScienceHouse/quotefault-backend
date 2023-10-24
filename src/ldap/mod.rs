@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use self::user::LdapUser;
 use crate::ldap::client::LdapClient;
 use crate::ldap::search::SearchAttrs;
@@ -69,7 +71,10 @@ pub async fn get_user(client: &LdapClient, user: &str) -> Result<Vec<LdapUser>, 
         .collect())
 }
 
-pub async fn users_exist(client: &LdapClient, users: Vec<String>) -> Result<bool, anyhow::Error> {
+pub async fn get_users(
+    client: &LdapClient,
+    users: &[String],
+) -> Result<Vec<LdapUser>, anyhow::Error> {
     let res = ldap_search(
         client,
         "cn=users,cn=accounts,dc=csh,dc=rit,dc=edu",
@@ -86,7 +91,23 @@ pub async fn users_exist(client: &LdapClient, users: Vec<String>) -> Result<bool
     )
     .await?;
 
-    Ok(users.len() == res.len())
+    Ok(res
+        .iter()
+        .map(|r| {
+            let user = SearchEntry::construct(r.to_owned());
+            LdapUser::from_entry(&user)
+        })
+        .collect())
+}
+
+pub async fn users_exist(
+    client: &LdapClient,
+    users: BTreeSet<String>,
+) -> Result<bool, anyhow::Error> {
+    Ok(users.len()
+        == get_users(client, Vec::from_iter(users).as_slice())
+            .await?
+            .len())
 }
 
 pub async fn search_users(
