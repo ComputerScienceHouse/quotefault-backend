@@ -8,7 +8,16 @@ Creates a quote
 
 #### Data
 
-Probably some stringified JSON array containing the quote, submitter, and speaker
+```json
+{
+    "shards": [
+        {
+            "body": "Quote body.",
+            "speaker": "username"
+        }
+    ]
+}
+```
 
 ### GET /api/quotes
 
@@ -17,7 +26,7 @@ Queries a list of quotes. With no parameters it returns the most recent 10 quote
 #### Params
 
 * `q={query}` - Searches the quotes for a list of space separates keywords
-* `offset={num}` - The page index (default: 0)
+* `lt={qid}` - Filters for all quotes less than a given quote id. Used in pagination.
 * `limit={num}` - The maximum number of entries to return (default: 10)
 * `submitter={username}` - Filters for quotes submitted by a certain user
 * `speaker={username}` - Filters for quotes said by a certain user

@@ -109,7 +109,7 @@ pub async fn create_quote(
 #[get("/quotes", wrap = "CSHAuth::enabled()")]
 pub async fn get_quotes(state: Data<AppState>, params: web::Query<FetchParams>) -> impl Responder {
     let limit: i64 = params.limit.unwrap_or(10).into();
-    let offset: i64 = params.offset.unwrap_or(0).into();
+    let lt_qid: i32 = params.lt.unwrap_or(0);
     let query: String = format!(
         "%{}%",
         params.q.clone().unwrap_or(String::new()).to_lowercase()
@@ -124,6 +124,7 @@ pub async fn get_quotes(state: Data<AppState>, params: web::Query<FetchParams>) 
             FROM (
                 SELECT * FROM quotes q
                 WHERE NOT hidden
+                AND CASE WHEN $2::int4 > 0 THEN q.id < $2::int4 ELSE true END
                 AND submitter LIKE $5
                 AND q.id IN (
                     SELECT quote_id FROM shards s
@@ -132,12 +133,11 @@ pub async fn get_quotes(state: Data<AppState>, params: web::Query<FetchParams>) 
                 )
                 ORDER BY q.id DESC
                 LIMIT $1
-                OFFSET $2
             ) AS pq
             LEFT JOIN shards s ON s.quote_id = pq.id
             ORDER BY pq.id DESC, s.index",
             limit,
-            offset,
+            lt_qid,
             query,
             speaker,
             submitter,

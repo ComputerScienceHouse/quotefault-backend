@@ -14,7 +14,7 @@ pub struct NewQuoteShard {
 #[derive(Deserialize, Debug)]
 pub struct FetchParams {
     pub q: Option<String>,
-    pub offset: Option<u32>,
+    pub lt: Option<i32>,
     pub limit: Option<u32>,
     pub submitter: Option<String>,
     pub speaker: Option<String>,
