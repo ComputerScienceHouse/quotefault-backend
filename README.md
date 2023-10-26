@@ -33,6 +33,34 @@ Queries a list of quotes. With no parameters it returns the most recent 10 quote
 
 #### Response
 ```json
+[
+    {
+        "submitter": {
+            "cn": "Cole Stowell",
+            "uid": "cole"
+        },
+        "timestamp": "2023-10-24T22:03:08.254364",
+        "shards": [
+            {
+                "body": "Erm... what the spruce?",
+                "speaker": {
+                    "cn": "Wilson McDade",
+                    "uid": "mcdade"
+                }
+            }
+        ],
+        "id": 26
+    }
+]
+```
+
+### GET /api/quote/{qid}
+
+Queries for a specific quote by id.
+
+#### Response
+
+```json
 {
     "submitter": {
         "cn": "Cole Stowell",
@@ -52,15 +80,15 @@ Queries a list of quotes. With no parameters it returns the most recent 10 quote
 }
 ```
 
-### PUT /api/hide/{qid}
+### DELETE /api/quote/{qid}
 
-Hides a quote
+Deletes a quote by id. Must be the submitter in order to delete.
 
-### PUT /api/unhide/{qid}
+### PUT /api/quote/{qid}/hide
 
-Unhides a quote
+Hides a quote by id
 
-### PUT /api/report/{qid}
+### POST /api/quote/{qid}/report
 
 Reports a quote
 
