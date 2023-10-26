@@ -165,7 +165,7 @@ pub async fn create_quote(
     }
 }
 
-#[get("/quotes/{id}", wrap = "CSHAuth::enabled()")]
+#[get("/quote/{id}", wrap = "CSHAuth::enabled()")]
 pub async fn get_quote(state: Data<AppState>, path: Path<(String,)>) -> impl Responder {
     let (id,) = path.into_inner();
     let id: i32 = match id.parse() {
