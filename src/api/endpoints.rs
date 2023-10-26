@@ -108,6 +108,91 @@ pub async fn create_quote(
     }
 }
 
+#[get("/quote/{id}", wrap = "CSHAuth::enabled()")]
+pub async fn get_quote(state: Data<AppState>, path: Path<(String,)>) -> impl Responder {
+    let (id,) = path.into_inner();
+    let id: i32 = match id.parse() {
+        Ok(id) => id,
+        Err(_e) => {
+            log!(Level::Warn, "Invalid id");
+            return HttpResponse::BadRequest().body("Invalid id");
+        }
+    };
+
+    match log_query_as(
+        query_as!(
+            QuoteShard,
+            "SELECT pq.id as \"id!\", s.index as \"index!\", pq.submitter as \"submitter!\",
+            pq.timestamp as \"timestamp!\", s.body as \"body!\", s.speaker as \"speaker!\"
+            FROM (
+                SELECT * FROM quotes q WHERE q.id = $1
+            ) AS pq
+            LEFT JOIN shards s ON s.quote_id = pq.id",
+            id,
+        )
+        .fetch_all(&state.db)
+        .await,
+        None,
+    )
+    .await
+    {
+        Ok((_, shards)) => {
+            let mut uid_map: HashMap<String, Option<String>> = HashMap::new();
+            shards.iter().for_each(|x| {
+                let _ = uid_map.insert(x.submitter.clone(), None);
+                let _ = uid_map.insert(x.speaker.clone(), None);
+            });
+            match ldap::get_users(
+                &state.ldap,
+                uid_map.keys().cloned().collect::<Vec<String>>().as_slice(),
+            )
+            .await
+            {
+                Ok(users) => users.into_iter().for_each(|x| {
+                    let _ = uid_map.insert(x.uid, Some(x.cn));
+                }),
+                Err(err) => return HttpResponse::InternalServerError().body(err.to_string()),
+            }
+
+            let mut quotes: Vec<QuoteResponse> = Vec::new();
+            for shard in shards {
+                let speaker = match uid_map.get(&shard.speaker).cloned().unwrap() {
+                    Some(cn) => UserResponse {
+                        uid: shard.speaker.clone(),
+                        cn,
+                    },
+                    None => continue,
+                };
+                if shard.index == 1 {
+                    let submitter = match uid_map.get(&shard.submitter).cloned().unwrap() {
+                        Some(cn) => UserResponse {
+                            uid: shard.submitter.clone(),
+                            cn,
+                        },
+                        None => continue,
+                    };
+                    quotes.push(QuoteResponse {
+                        id: shard.id,
+                        shards: vec![QuoteShardResponse {
+                            body: shard.body,
+                            speaker,
+                        }],
+                        timestamp: shard.timestamp,
+                        submitter,
+                    });
+                } else {
+                    quotes.last_mut().unwrap().shards.push(QuoteShardResponse {
+                        body: shard.body,
+                        speaker,
+                    });
+                }
+            }
+            HttpResponse::Ok().json(quotes.get(0))
+        }
+        Err(res) => res,
+    }
+}
+
 #[get("/quotes", wrap = "CSHAuth::enabled()")]
 pub async fn get_quotes(state: Data<AppState>, params: web::Query<FetchParams>) -> impl Responder {
     let limit: i64 = params.limit.unwrap_or(10).into();
