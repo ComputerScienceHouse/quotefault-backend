@@ -2,7 +2,7 @@ use std::collections::{BTreeSet, HashMap};
 
 use actix_web::{
     get, post,
-    web::{self, Data, Json},
+    web::{self, Data, Json, Path},
     HttpResponse, Responder,
 };
 use log::{log, Level};
@@ -12,7 +12,7 @@ use crate::{
     api::db::{log_query, log_query_as, open_transaction},
     app::AppState,
     auth::{CSHAuth, User},
-    ldap::{self, search::SearchAttrs},
+    ldap,
     schema::api::{FetchParams, NewQuote, QuoteResponse, QuoteShardResponse},
     schema::{
         api::UserResponse,
@@ -20,6 +20,63 @@ use crate::{
     },
     utils::is_valid_username,
 };
+
+async fn shards_to_quotes(
+    shards: &[QuoteShard],
+    ldap: &ldap::client::LdapClient,
+) -> Result<Vec<QuoteResponse>, HttpResponse> {
+    let mut uid_map: HashMap<String, Option<String>> = HashMap::new();
+    shards.iter().for_each(|x| {
+        let _ = uid_map.insert(x.submitter.clone(), None);
+        let _ = uid_map.insert(x.speaker.clone(), None);
+    });
+    match ldap::get_users(
+        ldap,
+        uid_map.keys().cloned().collect::<Vec<String>>().as_slice(),
+    )
+    .await
+    {
+        Ok(users) => users.into_iter().for_each(|x| {
+            let _ = uid_map.insert(x.uid, Some(x.cn));
+        }),
+        Err(err) => return Err(HttpResponse::InternalServerError().body(err.to_string())),
+    }
+
+    let mut quotes: Vec<QuoteResponse> = Vec::new();
+    for shard in shards {
+        let speaker = match uid_map.get(&shard.speaker).cloned().unwrap() {
+            Some(cn) => UserResponse {
+                uid: shard.speaker.clone(),
+                cn,
+            },
+            None => continue,
+        };
+        if shard.index == 1 {
+            let submitter = match uid_map.get(&shard.submitter).cloned().unwrap() {
+                Some(cn) => UserResponse {
+                    uid: shard.submitter.clone(),
+                    cn,
+                },
+                None => continue,
+            };
+            quotes.push(QuoteResponse {
+                id: shard.id,
+                shards: vec![QuoteShardResponse {
+                    body: shard.body.clone(),
+                    speaker,
+                }],
+                timestamp: shard.timestamp,
+                submitter,
+            });
+        } else {
+            quotes.last_mut().unwrap().shards.push(QuoteShardResponse {
+                body: shard.body.clone(),
+                speaker,
+            });
+        }
+    }
+    Ok(quotes)
+}
 
 #[post("/quote", wrap = "CSHAuth::enabled()")]
 pub async fn create_quote(
@@ -108,7 +165,7 @@ pub async fn create_quote(
     }
 }
 
-#[get("/quote/{id}", wrap = "CSHAuth::enabled()")]
+#[get("/quotes/{id}", wrap = "CSHAuth::enabled()")]
 pub async fn get_quote(state: Data<AppState>, path: Path<(String,)>) -> impl Responder {
     let (id,) = path.into_inner();
     let id: i32 = match id.parse() {
@@ -137,57 +194,14 @@ pub async fn get_quote(state: Data<AppState>, path: Path<(String,)>) -> impl Res
     .await
     {
         Ok((_, shards)) => {
-            let mut uid_map: HashMap<String, Option<String>> = HashMap::new();
-            shards.iter().for_each(|x| {
-                let _ = uid_map.insert(x.submitter.clone(), None);
-                let _ = uid_map.insert(x.speaker.clone(), None);
-            });
-            match ldap::get_users(
-                &state.ldap,
-                uid_map.keys().cloned().collect::<Vec<String>>().as_slice(),
-            )
-            .await
-            {
-                Ok(users) => users.into_iter().for_each(|x| {
-                    let _ = uid_map.insert(x.uid, Some(x.cn));
-                }),
-                Err(err) => return HttpResponse::InternalServerError().body(err.to_string()),
-            }
-
-            let mut quotes: Vec<QuoteResponse> = Vec::new();
-            for shard in shards {
-                let speaker = match uid_map.get(&shard.speaker).cloned().unwrap() {
-                    Some(cn) => UserResponse {
-                        uid: shard.speaker.clone(),
-                        cn,
-                    },
-                    None => continue,
-                };
-                if shard.index == 1 {
-                    let submitter = match uid_map.get(&shard.submitter).cloned().unwrap() {
-                        Some(cn) => UserResponse {
-                            uid: shard.submitter.clone(),
-                            cn,
-                        },
-                        None => continue,
-                    };
-                    quotes.push(QuoteResponse {
-                        id: shard.id,
-                        shards: vec![QuoteShardResponse {
-                            body: shard.body,
-                            speaker,
-                        }],
-                        timestamp: shard.timestamp,
-                        submitter,
-                    });
-                } else {
-                    quotes.last_mut().unwrap().shards.push(QuoteShardResponse {
-                        body: shard.body,
-                        speaker,
-                    });
+            if shards.is_empty() {
+                HttpResponse::NotFound().body("Quote could not be found")
+            } else {
+                match shards_to_quotes(shards.as_slice(), &state.ldap).await {
+                    Ok(quotes) => HttpResponse::Ok().json(quotes),
+                    Err(res) => res,
                 }
             }
-            HttpResponse::Ok().json(quotes.get(0))
         }
         Err(res) => res,
     }
@@ -236,59 +250,10 @@ pub async fn get_quotes(state: Data<AppState>, params: web::Query<FetchParams>) 
     )
     .await
     {
-        Ok((_, shards)) => {
-            let mut uid_map: HashMap<String, Option<String>> = HashMap::new();
-            shards.iter().for_each(|x| {
-                let _ = uid_map.insert(x.submitter.clone(), None);
-                let _ = uid_map.insert(x.speaker.clone(), None);
-            });
-            match ldap::get_users(
-                &state.ldap,
-                uid_map.keys().cloned().collect::<Vec<String>>().as_slice(),
-            )
-            .await
-            {
-                Ok(users) => users.into_iter().for_each(|x| {
-                    let _ = uid_map.insert(x.uid, Some(x.cn));
-                }),
-                Err(err) => return HttpResponse::InternalServerError().body(err.to_string()),
-            }
-
-            let mut quotes: Vec<QuoteResponse> = Vec::new();
-            for shard in shards {
-                let speaker = match uid_map.get(&shard.speaker).cloned().unwrap() {
-                    Some(cn) => UserResponse {
-                        uid: shard.speaker.clone(),
-                        cn,
-                    },
-                    None => continue,
-                };
-                if shard.index == 1 {
-                    let submitter = match uid_map.get(&shard.submitter).cloned().unwrap() {
-                        Some(cn) => UserResponse {
-                            uid: shard.submitter.clone(),
-                            cn,
-                        },
-                        None => continue,
-                    };
-                    quotes.push(QuoteResponse {
-                        id: shard.id,
-                        shards: vec![QuoteShardResponse {
-                            body: shard.body,
-                            speaker,
-                        }],
-                        timestamp: shard.timestamp,
-                        submitter,
-                    });
-                } else {
-                    quotes.last_mut().unwrap().shards.push(QuoteShardResponse {
-                        body: shard.body,
-                        speaker,
-                    });
-                }
-            }
-            HttpResponse::Ok().json(quotes)
-        }
+        Ok((_, shards)) => match shards_to_quotes(shards.as_slice(), &state.ldap).await {
+            Ok(quotes) => HttpResponse::Ok().json(quotes),
+            Err(response) => response,
+        },
         Err(res) => res,
     }
 }
