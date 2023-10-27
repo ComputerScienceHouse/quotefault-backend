@@ -92,9 +92,29 @@ Hides a quote by id
 
 Reports a quote
 
+#### Post Data
+
+```json
+{
+    "reason": "Post makes fun of eboard",
+}
+```
+
 ### GET /api/reports
 
 Returns a list of quotes which
+
+#### Params
+
+* `qid={qid}` - Filters for all reports for a given quote
+
+### GET /api/report/{rid}
+
+Gets a report by its id
+
+### PUT /api/report/{rid}/resolve
+
+Resolves a report.
 
 ### GET /api/users
 
@@ -124,8 +144,7 @@ CREATE TABLE Quotes (
     id INT4 PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
     submitter VARCHAR(32) NOT NULL,
     timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    hidden BOOL NOT NULL DEFAULT FALSE,
-    reported BOOL NOT NULL DEFAULT FALSE
+    hidden BOOL NOT NULL DEFAULT FALSE
 );
 ```
 
@@ -133,10 +152,22 @@ CREATE TABLE Quotes (
 
 ```SQL
 CREATE TABLE Shards (
-    quote_id INT4 REFERENCES quotes(id) NOT NULL ON DELETE CASCADE,
+    quote_id INT4 REFERENCES quotes(id) ON DELETE CASCADE NOT NULL,
     index SMALLINT NOT NULL,
     body TEXT NOT NULL,
     speaker VARCHAR(32) NOT NULL,
     PRIMARY KEY (quote_id, index)
+);
+```
+
+### Reports Table
+```SQL
+CREATE TABLE Reports (
+    id INT4 PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    quote_id INT4 REFERENCES quotes(id) ON DELETE CASCADE NOT NULL,
+    reason TEXT NOT NULL,
+    submitter VARCHAR(32) NOT NULL,
+    timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    resolver VARCHAR(32)
 );
 ```

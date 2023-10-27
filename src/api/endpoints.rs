@@ -15,7 +15,7 @@ use crate::{
     ldap,
     schema::api::{FetchParams, NewQuote, QuoteResponse, QuoteShardResponse},
     schema::{
-        api::UserResponse,
+        api::{NewReport, UserResponse},
         db::{QuoteShard, ID},
     },
     utils::is_valid_username,
@@ -241,7 +241,51 @@ pub async fn hide_quote(state: Data<AppState>, path: Path<(i32,)>, user: User) -
         Err(res) => return res,
     }
 
-    log!(Level::Trace, "hidden quote");
+    log!(Level::Trace, "hid quote");
+
+    match transaction.commit().await {
+        Ok(_) => HttpResponse::Ok().body(""),
+        Err(e) => {
+            log!(Level::Error, "Transaction failed to commit");
+            HttpResponse::InternalServerError().body(e.to_string())
+        }
+    }
+}
+
+#[post("/quote/{id}/report")]
+pub async fn report_quote(
+    state: Data<AppState>,
+    path: Path<(i32,)>,
+    body: Json<NewReport>,
+    user: User,
+) -> impl Responder {
+    let (id,) = path.into_inner();
+
+    let mut transaction = match open_transaction(&state.db).await {
+        Ok(t) => t,
+        Err(res) => return res,
+    };
+
+    match log_query(
+        query!(
+            "INSERT INTO reports (quote_id, reason, submitter) VALUES ($1, $2, $3)",
+            id,
+            body.reason,
+            user.preferred_username
+        )
+        .execute(&state.db)
+        .await
+        .map(|_| ()),
+        Some(transaction),
+    )
+    .await
+    {
+        Ok(tx) => {
+            transaction = tx.unwrap();
+        }
+        Err(res) => return res,
+    };
+    log!(Level::Trace, "created a new report");
 
     match transaction.commit().await {
         Ok(_) => HttpResponse::Ok().body(""),

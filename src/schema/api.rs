@@ -1,14 +1,19 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Deserialize, Debug)]
 pub struct NewQuote {
     pub shards: Vec<NewQuoteShard>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Deserialize, Debug)]
 pub struct NewQuoteShard {
     pub body: String,
     pub speaker: String,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct NewReport {
+    pub reason: String,
 }
 
 #[derive(Deserialize, Debug)]
