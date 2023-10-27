@@ -401,8 +401,10 @@ pub async fn get_users(state: Data<AppState>) -> impl Responder {
     }
 }
 
-#[get("/reports")]
-pub async fn get_reports(state: Data<AppState>, user: User) -> impl Responder {}
+#[get("/reports", wrap = "CSHAuth::admin_only()")]
+pub async fn get_reports(state: Data<AppState>, user: User) -> impl Responder {
+    HttpResponse::Ok().body("You are eboard OR admin!")
+}
 
 // #[put("/report/{id}/resolve")]
 // pub async fn resolve_report(
