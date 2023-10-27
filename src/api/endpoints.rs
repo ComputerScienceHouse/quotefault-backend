@@ -252,7 +252,7 @@ pub async fn hide_quote(state: Data<AppState>, path: Path<(i32,)>, user: User) -
     }
 }
 
-#[post("/quote/{id}/report")]
+#[post("/quote/{id}/report", wrap = "CSHAuth::enabled()")]
 pub async fn report_quote(
     state: Data<AppState>,
     path: Path<(i32,)>,
@@ -400,6 +400,9 @@ pub async fn get_users(state: Data<AppState>) -> impl Responder {
         Err(err) => HttpResponse::InternalServerError().body(err.to_string()),
     }
 }
+
+#[get("/reports")]
+pub async fn get_reports(state: Data<AppState>, user: User) -> impl Responder {}
 
 // #[put("/report/{id}/resolve")]
 // pub async fn resolve_report(
