@@ -126,7 +126,7 @@ pub async fn create_quote(
             "INSERT INTO quotes(submitter) VALUES ($1) RETURNING id",
             user.preferred_username
         )
-        .fetch_all(&state.db)
+        .fetch_all(&mut *transaction)
         .await,
         Some(transaction),
     )
@@ -147,7 +147,7 @@ pub async fn create_quote(
 
     match log_query(
         query!("INSERT INTO Shards (quote_id, index, body, speaker) SELECT quote_id, index, body, speaker FROM UNNEST($1::int4[], $2::int2[], $3::text[], $4::varchar[]) as a(quote_id, index, body, speaker)", ids.as_slice(), indices.as_slice(), bodies.as_slice(), speakers.as_slice())
-        .execute(&state.db)
+        .execute(&mut *transaction)
         .await
         .map(|_| ()), Some(transaction)).await {
         Ok(tx) => transaction = tx.unwrap(),
@@ -180,7 +180,7 @@ pub async fn delete_quote(state: Data<AppState>, path: Path<(i32,)>, user: User)
             id,
             user.preferred_username
         )
-        .fetch_all(&state.db)
+        .fetch_all(&mut *transaction)
         .await,
         Some(transaction),
     )
@@ -225,7 +225,7 @@ pub async fn hide_quote(state: Data<AppState>, path: Path<(i32,)>, user: User) -
             id,
             user.preferred_username
         )
-        .fetch_all(&state.db)
+        .fetch_all(&mut *transaction)
         .await,
         Some(transaction),
     )
