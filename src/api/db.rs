@@ -48,14 +48,14 @@ pub async fn log_query(
             log!(Level::Warn, "DB Query failed: {}", e);
             if let Some(tx) = tx {
                 match tx.rollback().await {
-                    Ok(_) => {}
+                    Ok(_) => (),
                     Err(tx_e) => {
                         log!(Level::Error, "Transaction failed to rollback: {}", tx_e);
                         return Err(HttpResponse::InternalServerError().body("Internal DB Error"));
                     }
                 }
             }
-            Err(HttpResponse::InternalServerError().body("Internal DB Error"))
+            Err(HttpResponse::InternalServerError().body(format!("Internal DB Error: {e}")))
         }
     }
 }

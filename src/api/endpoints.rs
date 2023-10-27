@@ -266,22 +266,25 @@ pub async fn report_quote(
         Err(res) => return res,
     };
 
-    match log_query(
-        query!(
-            "INSERT INTO reports (quote_id, reason, submitter) VALUES ($1, $2, $3)",
+    match log_query_as(
+        query_as!(
+            ID,
+            "INSERT INTO reports (quote_id, reason, submitter) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING RETURNING id",
             id,
             body.reason,
             user.preferred_username
         )
-        .execute(&state.db)
-        .await
-        .map(|_| ()),
+        .fetch_all(&mut *transaction)
+        .await,
         Some(transaction),
     )
     .await
     {
-        Ok(tx) => {
+        Ok((tx, ids)) => {
             transaction = tx.unwrap();
+            if ids.is_empty() {
+                return HttpResponse::BadRequest().body("You have already reported this quote.");
+            }
         }
         Err(res) => return res,
     };
@@ -397,3 +400,12 @@ pub async fn get_users(state: Data<AppState>) -> impl Responder {
         Err(err) => HttpResponse::InternalServerError().body(err.to_string()),
     }
 }
+
+// #[put("/report/{id}/resolve")]
+// pub async fn resolve_report(
+//     state: Data<AppState>,
+//     path: Path<(i32,)>,
+//     user: User,
+// ) -> impl Responder {
+//     let (id,) = path.into_inner();
+// }

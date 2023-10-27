@@ -161,13 +161,15 @@ CREATE TABLE Shards (
 ```
 
 ### Reports Table
+
 ```SQL
 CREATE TABLE Reports (
-    id INT4 PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    id INT4 GENERATED ALWAYS AS IDENTITY,
     quote_id INT4 REFERENCES quotes(id) ON DELETE CASCADE NOT NULL,
     reason TEXT NOT NULL,
     submitter VARCHAR(32) NOT NULL,
     timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    resolver VARCHAR(32)
+    resolver VARCHAR(32),
+    PRIMARY KEY (quote_id, submitter)
 );
 ```
