@@ -96,6 +96,25 @@ Reports a quote
 
 Returns a list of quotes which
 
+### GET /api/users
+
+Gets a list of users
+
+#### Response
+
+```json
+[
+    {
+        "cn": "Cole Stowell",
+        "uid": "cole"
+    },
+    {
+        "cn": "Wilson McDade",
+        "uid": "mcdade"
+    }
+]
+```
+
 ## Database Schema
 
 ### Quotes Table
