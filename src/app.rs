@@ -4,7 +4,7 @@ use actix_web::web::{self, scope, Data};
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 
 use crate::{
-    api::endpoints::{create_quote, get_quote, get_quotes, get_users},
+    api::endpoints::{create_quote, delete_quote, get_quote, get_quotes, get_users},
     ldap::client::LdapClient,
 };
 
@@ -19,7 +19,8 @@ pub fn configure_app(cfg: &mut web::ServiceConfig) {
             .service(create_quote)
             .service(get_quotes)
             .service(get_users)
-            .service(get_quote),
+            .service(get_quote)
+            .service(delete_quote),
     );
 }
 

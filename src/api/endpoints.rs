@@ -1,7 +1,7 @@
 use std::collections::{BTreeSet, HashMap};
 
 use actix_web::{
-    get, post,
+    delete, get, post,
     web::{self, Data, Json, Path},
     HttpResponse, Responder,
 };
@@ -165,16 +165,51 @@ pub async fn create_quote(
     }
 }
 
-#[get("/quote/{id}", wrap = "CSHAuth::enabled()")]
-pub async fn get_quote(state: Data<AppState>, path: Path<(String,)>) -> impl Responder {
+#[delete("/quote/{id}", wrap = "CSHAuth::enabled()")]
+pub async fn delete_quote(state: Data<AppState>, path: Path<(i32,)>, user: User) -> impl Responder {
     let (id,) = path.into_inner();
-    let id: i32 = match id.parse() {
-        Ok(id) => id,
-        Err(_e) => {
-            log!(Level::Warn, "Invalid id");
-            return HttpResponse::BadRequest().body("Invalid id");
-        }
+
+    let mut transaction = match open_transaction(&state.db).await {
+        Ok(t) => t,
+        Err(res) => return res,
     };
+
+    match log_query_as(
+        query!(
+            "DELETE FROM quotes WHERE id = $1 AND submitter = $2 RETURNING id",
+            id,
+            user.preferred_username
+        )
+        .fetch_all(&state.db)
+        .await,
+        Some(transaction),
+    )
+    .await
+    {
+        Ok((tx, result)) => {
+            if result.is_empty() {
+                return HttpResponse::BadRequest()
+                    .body("Either this is not your quote or this quote does not exist.");
+            }
+            transaction = tx.unwrap()
+        }
+        Err(res) => return res,
+    }
+
+    log!(Level::Trace, "deleted quote and all shards");
+
+    match transaction.commit().await {
+        Ok(_) => HttpResponse::Ok().body(""),
+        Err(e) => {
+            log!(Level::Error, "Transaction failed to commit");
+            HttpResponse::InternalServerError().body(e.to_string())
+        }
+    }
+}
+
+#[get("/quote/{id}", wrap = "CSHAuth::enabled()")]
+pub async fn get_quote(state: Data<AppState>, path: Path<(i32,)>) -> impl Responder {
+    let (id,) = path.into_inner();
 
     match log_query_as(
         query_as!(

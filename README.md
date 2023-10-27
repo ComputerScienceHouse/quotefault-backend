@@ -114,7 +114,7 @@ CREATE TABLE Quotes (
 
 ```SQL
 CREATE TABLE Shards (
-    quote_id INT4 REFERENCES quotes(id) NOT NULL,
+    quote_id INT4 REFERENCES quotes(id) NOT NULL ON DELETE CASCADE,
     index SMALLINT NOT NULL,
     body TEXT NOT NULL,
     speaker VARCHAR(32) NOT NULL,
