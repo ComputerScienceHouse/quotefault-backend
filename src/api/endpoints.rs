@@ -1,7 +1,7 @@
 use std::collections::{BTreeSet, HashMap};
 
 use actix_web::{
-    delete, get, post,
+    delete, get, post, put,
     web::{self, Data, Json, Path},
     HttpResponse, Responder,
 };
@@ -197,6 +197,51 @@ pub async fn delete_quote(state: Data<AppState>, path: Path<(i32,)>, user: User)
     }
 
     log!(Level::Trace, "deleted quote and all shards");
+
+    match transaction.commit().await {
+        Ok(_) => HttpResponse::Ok().body(""),
+        Err(e) => {
+            log!(Level::Error, "Transaction failed to commit");
+            HttpResponse::InternalServerError().body(e.to_string())
+        }
+    }
+}
+
+#[put("/quote/{id}/hide", wrap = "CSHAuth::enabled()")]
+pub async fn hide_quote(state: Data<AppState>, path: Path<(i32,)>, user: User) -> impl Responder {
+    let (id,) = path.into_inner();
+
+    let mut transaction = match open_transaction(&state.db).await {
+        Ok(t) => t,
+        Err(res) => return res,
+    };
+
+    match log_query_as(
+        query!(
+            "UPDATE quotes SET hidden=true WHERE id=$1 AND id IN (
+                SELECT quote_id FROM shards s
+                WHERE s.speaker = $2
+            ) RETURNING id",
+            id,
+            user.preferred_username
+        )
+        .fetch_all(&state.db)
+        .await,
+        Some(transaction),
+    )
+    .await
+    {
+        Ok((tx, result)) => {
+            if result.is_empty() {
+                return HttpResponse::BadRequest()
+                    .body("Either you are not quoted in this quote or this quote does not exist.");
+            }
+            transaction = tx.unwrap()
+        }
+        Err(res) => return res,
+    }
+
+    log!(Level::Trace, "hidden quote");
 
     match transaction.commit().await {
         Ok(_) => HttpResponse::Ok().body(""),
