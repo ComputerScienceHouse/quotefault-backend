@@ -322,7 +322,7 @@ pub async fn get_quote(state: Data<AppState>, path: Path<(i32,)>) -> impl Respon
                 HttpResponse::NotFound().body("Quote could not be found")
             } else {
                 match shards_to_quotes(shards.as_slice(), &state.ldap).await {
-                    Ok(quotes) => HttpResponse::Ok().json(quotes),
+                    Ok(quotes) => HttpResponse::Ok().json(quotes.get(0).unwrap()),
                     Err(res) => res,
                 }
             }
