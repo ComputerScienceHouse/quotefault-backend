@@ -102,15 +102,24 @@ Reports a quote
 
 ### GET /api/reports
 
-Returns a list of quotes which
+Returns a list of reports
 
-#### Params
+#### Response
 
-* `qid={qid}` - Filters for all reports for a given quote
-
-### GET /api/report/{rid}
-
-Gets a report by its id
+```json
+[
+    {
+        "quote_id": 9,
+        "reports": [
+            {
+                "reason": "Insults eboard",
+                "timestamp": "2023-10-27T21:09:01.338863",
+                "id": 10
+            }
+        ]
+    }
+]
+```
 
 ### PUT /api/report/{rid}/resolve
 
@@ -119,6 +128,10 @@ Resolves a report.
 ### GET /api/users
 
 Gets a list of users
+
+### GET /api/hidden
+
+Gets a list of hidden quotes. Only 
 
 #### Response
 
