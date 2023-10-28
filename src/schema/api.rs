@@ -44,3 +44,15 @@ pub struct UserResponse {
     pub cn: String,
     pub uid: String,
 }
+
+#[derive(Serialize, Debug)]
+pub struct ReportedQuoteResponse {
+    pub quote_id: i32,
+    pub reports: Vec<ReportResponse>,
+}
+
+#[derive(Serialize, Debug)]
+pub struct ReportResponse {
+    pub reason: String,
+    pub timestamp: chrono::NaiveDateTime,
+}

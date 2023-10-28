@@ -6,6 +6,7 @@ use actix_web::{
     HttpResponse, Responder,
 };
 use log::{log, Level};
+use sha3::{Digest, Sha3_256};
 use sqlx::{query, query_as};
 
 use crate::{
@@ -15,8 +16,8 @@ use crate::{
     ldap,
     schema::api::{FetchParams, NewQuote, QuoteResponse, QuoteShardResponse},
     schema::{
-        api::{NewReport, UserResponse},
-        db::{QuoteShard, ID},
+        api::{NewReport, ReportResponse, ReportedQuoteResponse, UserResponse},
+        db::{QuoteShard, ReportedQuoteShard, ID},
     },
     utils::is_valid_username,
 };
@@ -76,6 +77,31 @@ async fn shards_to_quotes(
         }
     }
     Ok(quotes)
+}
+
+fn format_reports(quotes: &[ReportedQuoteShard]) -> Vec<ReportedQuoteResponse> {
+    let mut reported_quotes: HashMap<i32, ReportedQuoteResponse> = HashMap::new();
+    for quote in quotes {
+        match reported_quotes.get_mut(&quote.quote_id) {
+            Some(reported_quote) => reported_quote.reports.push(ReportResponse {
+                reason: quote.report_reason.clone(),
+                timestamp: quote.report_timestamp,
+            }),
+            None => {
+                let _ = reported_quotes.insert(
+                    quote.quote_id,
+                    ReportedQuoteResponse {
+                        quote_id: quote.quote_id,
+                        reports: vec![ReportResponse {
+                            timestamp: quote.report_timestamp,
+                            reason: quote.report_reason.clone(),
+                        }],
+                    },
+                );
+            }
+        }
+    }
+    reported_quotes.into_values().collect()
 }
 
 #[post("/quote", wrap = "CSHAuth::enabled()")]
@@ -266,13 +292,17 @@ pub async fn report_quote(
         Err(res) => return res,
     };
 
+    let mut hasher = Sha3_256::new();
+    hasher.update(format!("{}coleandethanwerehere", user.preferred_username).as_str()); // >:)
+    let result = hasher.finalize();
+
     match log_query_as(
         query_as!(
             ID,
-            "INSERT INTO reports (quote_id, reason, submitter) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING RETURNING id",
+            "INSERT INTO reports (quote_id, reason, submitter_hash) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING RETURNING id",
             id,
             body.reason,
-            user.preferred_username
+            result.as_slice()
         )
         .fetch_all(&mut *transaction)
         .await,
@@ -402,8 +432,33 @@ pub async fn get_users(state: Data<AppState>) -> impl Responder {
 }
 
 #[get("/reports", wrap = "CSHAuth::admin_only()")]
-pub async fn get_reports(state: Data<AppState>, user: User) -> impl Responder {
-    HttpResponse::Ok().body("You are eboard OR admin!")
+pub async fn get_reports(state: Data<AppState>) -> impl Responder {
+    match log_query_as(
+        query_as!(
+            ReportedQuoteShard,
+            "SELECT pq.id AS \"quote_id!\", pq.submitter AS \"quote_submitter!\",
+            pq.timestamp AS \"quote_timestamp!\", pq.hidden AS \"quote_hidden!\", 
+            r.timestamp AS \"report_timestamp!\", r.id AS \"report_id!\",
+            r.reason AS \"report_reason!\", r.resolver AS \"report_resolver\"
+            FROM (
+                SELECT * FROM quotes q
+                WHERE q.id IN (
+                    SELECT quote_id FROM reports r
+                    WHERE r.resolver IS NULL
+                )
+            ) AS pq
+            LEFT JOIN reports r ON r.quote_id = pq.id
+            ORDER BY pq.id, r.id"
+        )
+        .fetch_all(&state.db)
+        .await,
+        None,
+    )
+    .await
+    {
+        Ok((_, reports)) => HttpResponse::Ok().json(format_reports(reports.as_slice())),
+        Err(res) => res,
+    }
 }
 
 // #[put("/report/{id}/resolve")]

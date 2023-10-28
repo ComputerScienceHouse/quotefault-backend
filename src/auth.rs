@@ -41,7 +41,7 @@ struct TokenHeader {
 pub struct User {
     exp: u32,
     iat: u32,
-    auth_time: u32,
+    auth_time: Option<u32>,
     jti: String,
     iss: String,
     aud: String,
@@ -101,12 +101,11 @@ impl FromRequest for User {
 
 impl User {
     fn admin(&self) -> bool {
-        self.groups.contains(&String::from("/eboard"))
-            || self.groups.contains(&String::from("/admins/rtp"))
+        self.groups.contains(&String::from("eboard")) || self.groups.contains(&String::from("rtp"))
     }
 
     fn eboard(&self) -> bool {
-        self.groups.contains(&String::from("/eboard"))
+        self.groups.contains(&String::from("eboard"))
     }
 }
 

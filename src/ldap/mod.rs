@@ -75,6 +75,9 @@ pub async fn get_users(
     client: &LdapClient,
     users: &[String],
 ) -> Result<Vec<LdapUser>, anyhow::Error> {
+    if users.is_empty() {
+        return Ok(Vec::new());
+    }
     let res = ldap_search(
         client,
         "cn=users,cn=accounts,dc=csh,dc=rit,dc=edu",
