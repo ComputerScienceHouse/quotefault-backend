@@ -106,6 +106,61 @@ fn format_reports(quotes: &[ReportedQuoteShard]) -> Vec<ReportedQuoteResponse> {
     reported_quotes.into_values().collect()
 }
 
+async fn fetch_quotes(
+    state: Data<AppState>,
+    params: web::Query<FetchParams>,
+    is_hidden: bool,
+) -> impl Responder {
+    let limit: i64 = params.limit.unwrap_or(10).into();
+    let lt_qid: i32 = params.lt.unwrap_or(0);
+    let query: String = params
+        .q
+        .clone()
+        .map(|x| format!("%({})%", (x.replace(' ', "|"))))
+        .unwrap_or("%%".into());
+    let speaker = params.speaker.clone().unwrap_or("%".to_string());
+    let submitter = params.submitter.clone().unwrap_or("%".to_string());
+    match log_query_as(
+        query_as!(
+            QuoteShard,
+            "SELECT pq.id as \"id!\", s.index as \"index!\", pq.submitter as \"submitter!\",
+            pq.timestamp as \"timestamp!\", s.body as \"body!\", s.speaker as \"speaker!\"
+            FROM (
+                SELECT * FROM quotes q
+                WHERE hidden = $6
+                AND CASE WHEN $2::int4 > 0 THEN q.id < $2::int4 ELSE true END
+                AND submitter LIKE $5
+                AND q.id IN (
+                    SELECT quote_id FROM shards s
+                    WHERE LOWER(body) SIMILAR TO LOWER($3)
+                    AND speaker LIKE $4
+                )
+                ORDER BY q.id DESC
+                LIMIT $1
+            ) AS pq
+            LEFT JOIN shards s ON s.quote_id = pq.id
+            ORDER BY timestamp DESC, pq.id DESC, s.index",
+            limit,
+            lt_qid,
+            query,
+            speaker,
+            submitter,
+            is_hidden,
+        )
+        .fetch_all(&state.db)
+        .await,
+        None,
+    )
+    .await
+    {
+        Ok((_, shards)) => match shards_to_quotes(shards.as_slice(), &state.ldap).await {
+            Ok(quotes) => HttpResponse::Ok().json(quotes),
+            Err(response) => response,
+        },
+        Err(res) => res,
+    }
+}
+
 #[post("/quote", wrap = "CSHAuth::enabled()")]
 pub async fn create_quote(
     state: Data<AppState>,
@@ -368,53 +423,7 @@ pub async fn get_quote(state: Data<AppState>, path: Path<(i32,)>) -> impl Respon
 
 #[get("/quotes", wrap = "CSHAuth::enabled()")]
 pub async fn get_quotes(state: Data<AppState>, params: web::Query<FetchParams>) -> impl Responder {
-    let limit: i64 = params.limit.unwrap_or(10).into();
-    let lt_qid: i32 = params.lt.unwrap_or(0);
-    let query: String = params
-        .q
-        .clone()
-        .map(|x| format!("%({})%", (x.replace(' ', "|"))))
-        .unwrap_or("%%".into());
-    let speaker = params.speaker.clone().unwrap_or("%".to_string());
-    let submitter = params.submitter.clone().unwrap_or("%".to_string());
-    match log_query_as(
-        query_as!(
-            QuoteShard,
-            "SELECT pq.id as \"id!\", s.index as \"index!\", pq.submitter as \"submitter!\",
-            pq.timestamp as \"timestamp!\", s.body as \"body!\", s.speaker as \"speaker!\"
-            FROM (
-                SELECT * FROM quotes q
-                WHERE NOT hidden
-                AND CASE WHEN $2::int4 > 0 THEN q.id < $2::int4 ELSE true END
-                AND submitter LIKE $5
-                AND q.id IN (
-                    SELECT quote_id FROM shards s
-                    WHERE LOWER(body) SIMILAR TO LOWER($3)
-                    AND speaker LIKE $4
-                )
-                ORDER BY q.id DESC
-                LIMIT $1
-            ) AS pq
-            LEFT JOIN shards s ON s.quote_id = pq.id
-            ORDER BY timestamp DESC, pq.id DESC, s.index",
-            limit,
-            lt_qid,
-            query,
-            speaker,
-            submitter,
-        )
-        .fetch_all(&state.db)
-        .await,
-        None,
-    )
-    .await
-    {
-        Ok((_, shards)) => match shards_to_quotes(shards.as_slice(), &state.ldap).await {
-            Ok(quotes) => HttpResponse::Ok().json(quotes),
-            Err(response) => response,
-        },
-        Err(res) => res,
-    }
+    fetch_quotes(state, params, false).await
 }
 
 #[get("/users", wrap = "CSHAuth::enabled()")]
@@ -461,6 +470,11 @@ pub async fn get_reports(state: Data<AppState>) -> impl Responder {
         Ok((_, reports)) => HttpResponse::Ok().json(format_reports(reports.as_slice())),
         Err(res) => res,
     }
+}
+
+#[get("/hidden", wrap = "CSHAuth::admin_only()")]
+pub async fn get_hidden(state: Data<AppState>, params: web::Query<FetchParams>) -> impl Responder {
+    fetch_quotes(state, params, true).await
 }
 
 // #[put("/report/{id}/resolve")]

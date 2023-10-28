@@ -123,7 +123,7 @@ Returns a list of reports
 
 ### PUT /api/report/{rid}/resolve
 
-Resolves a report.
+Resolves a report
 
 ### GET /api/users
 
@@ -131,7 +131,9 @@ Gets a list of users
 
 ### GET /api/hidden
 
-Gets a list of hidden quotes. Only 
+Gets a list of hidden quotes. Admin exclusive.
+
+Takes and returns the same data as `/api/quotes`
 
 #### Response
 
