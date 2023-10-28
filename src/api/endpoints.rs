@@ -86,6 +86,7 @@ fn format_reports(quotes: &[ReportedQuoteShard]) -> Vec<ReportedQuoteResponse> {
             Some(reported_quote) => reported_quote.reports.push(ReportResponse {
                 reason: quote.report_reason.clone(),
                 timestamp: quote.report_timestamp,
+                id: quote.report_id,
             }),
             None => {
                 let _ = reported_quotes.insert(
@@ -95,6 +96,7 @@ fn format_reports(quotes: &[ReportedQuoteShard]) -> Vec<ReportedQuoteResponse> {
                         reports: vec![ReportResponse {
                             timestamp: quote.report_timestamp,
                             reason: quote.report_reason.clone(),
+                            id: quote.report_id,
                         }],
                     },
                 );

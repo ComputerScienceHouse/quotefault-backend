@@ -55,4 +55,5 @@ pub struct ReportedQuoteResponse {
 pub struct ReportResponse {
     pub reason: String,
     pub timestamp: chrono::NaiveDateTime,
+    pub id: i32,
 }
