@@ -1,6 +1,6 @@
 use actix_web::HttpResponse;
 use log::{log, Level};
-use sqlx::{Error, Pool, Postgres, Transaction};
+use sqlx::{postgres::PgQueryResult, Error, Pool, Postgres, Transaction};
 
 pub async fn open_transaction(db: &Pool<Postgres>) -> Result<Transaction<Postgres>, HttpResponse> {
     match db.try_begin().await {
@@ -39,11 +39,11 @@ pub async fn log_query_as<T>(
 }
 
 pub async fn log_query(
-    query: Result<(), Error>,
+    query: Result<PgQueryResult, Error>,
     tx: Option<Transaction<'_, Postgres>>,
-) -> Result<Option<Transaction<'_, Postgres>>, HttpResponse> {
+) -> Result<(Option<Transaction<'_, Postgres>>, PgQueryResult), HttpResponse> {
     match query {
-        Ok(_) => Ok(tx),
+        Ok(result) => Ok((tx, result)),
         Err(e) => {
             log!(Level::Warn, "DB Query failed: {}", e);
             if let Some(tx) = tx {

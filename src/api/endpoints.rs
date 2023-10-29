@@ -168,23 +168,23 @@ pub async fn hide_quote_by_id(
     submitter: String,
     mut transaction: Transaction<'_, Postgres>,
 ) -> Result<Transaction<'_, Postgres>, HttpResponse> {
-    match log_query_as(
+    match log_query(
         query!(
             "UPDATE quotes SET hidden=true WHERE id=$1 AND id IN (
                 SELECT quote_id FROM shards s
                 WHERE s.speaker = $2
-            ) RETURNING id",
+            )",
             id,
             submitter
         )
-        .fetch_all(&mut *transaction)
+        .execute(&mut *transaction)
         .await,
         Some(transaction),
     )
     .await
     {
         Ok((tx, result)) => {
-            if result.is_empty() {
+            if result.rows_affected() == 0 {
                 Err(HttpResponse::BadRequest()
                     .body("Either you are not quoted in this quote or this quote does not exist."))
             } else {
@@ -266,9 +266,8 @@ pub async fn create_quote(
     match log_query(
         query!("INSERT INTO Shards (quote_id, index, body, speaker) SELECT quote_id, index, body, speaker FROM UNNEST($1::int4[], $2::int2[], $3::text[], $4::varchar[]) as a(quote_id, index, body, speaker)", ids.as_slice(), indices.as_slice(), bodies.as_slice(), speakers.as_slice())
         .execute(&mut *transaction)
-        .await
-        .map(|_| ()), Some(transaction)).await {
-        Ok(tx) => transaction = tx.unwrap(),
+        .await, Some(transaction)).await {
+        Ok((tx, _)) => transaction = tx.unwrap(),
         Err(res) => return res,
     }
 
@@ -292,20 +291,20 @@ pub async fn delete_quote(state: Data<AppState>, path: Path<(i32,)>, user: User)
         Err(res) => return res,
     };
 
-    match log_query_as(
+    match log_query(
         query!(
-            "DELETE FROM quotes WHERE id = $1 AND submitter = $2 RETURNING id",
+            "DELETE FROM quotes WHERE id = $1 AND submitter = $2",
             id,
             user.preferred_username
         )
-        .fetch_all(&mut *transaction)
+        .execute(&mut *transaction)
         .await,
         Some(transaction),
     )
     .await
     {
         Ok((tx, result)) => {
-            if result.is_empty() {
+            if result.rows_affected() == 0 {
                 return HttpResponse::BadRequest()
                     .body("Either this is not your quote or this quote does not exist.");
             }
@@ -366,7 +365,7 @@ pub async fn report_quote(
     hasher.update(format!("{}coleandethanwerehere", user.preferred_username).as_str()); // >:)
     let result = hasher.finalize();
 
-    match log_query_as(
+    match log_query(
         query!(
             "INSERT INTO reports (quote_id, reason, submitter_hash)
             SELECT $1, $2, $3
@@ -374,20 +373,20 @@ pub async fn report_quote(
                 SELECT id FROM quotes
                 WHERE NOT hidden
             )
-            ON CONFLICT DO NOTHING RETURNING id",
+            ON CONFLICT DO NOTHING",
             id,
             body.reason,
             result.as_slice()
         )
-        .fetch_all(&mut *transaction)
+        .execute(&mut *transaction)
         .await,
         Some(transaction),
     )
     .await
     {
-        Ok((tx, rows)) => {
+        Ok((tx, result)) => {
             transaction = tx.unwrap();
-            if rows.is_empty() {
+            if result.rows_affected() == 0 {
                 return HttpResponse::BadRequest()
                     .body("You have already reported this quote or quote does not exist");
             }
@@ -455,7 +454,7 @@ pub async fn vote_quote(
         Err(res) => return res,
     };
 
-    match log_query_as(
+    match log_query(
         query!(
             "INSERT INTO votes (quote_id, vote, submitter)
             SELECT $1, $2, $3
@@ -464,22 +463,21 @@ pub async fn vote_quote(
                 WHERE CASE WHEN $4 THEN true ELSE NOT hidden END
             )
             ON CONFLICT (quote_id, submitter)
-            DO UPDATE SET vote=$2
-            RETURNING quote_id",
+            DO UPDATE SET vote=$2",
             id,
             vote as Vote,
             user.preferred_username,
             user.admin()
         )
-        .fetch_all(&mut *transaction)
+        .execute(&mut *transaction)
         .await,
         Some(transaction),
     )
     .await
     {
-        Ok((tx, rows)) => {
+        Ok((tx, result)) => {
             transaction = tx.unwrap();
-            if rows.is_empty() {
+            if result.rows_affected() == 0 {
                 return HttpResponse::BadRequest().body("Quote does not exist");
             }
         }
@@ -504,28 +502,27 @@ pub async fn unvote_quote(state: Data<AppState>, path: Path<(i32,)>, user: User)
         Err(res) => return res,
     };
 
-    match log_query_as(
+    match log_query(
         query!(
             "DELETE FROM votes 
             WHERE quote_id=$1 AND submitter=$2
             AND $1 IN (
                 SELECT id FROM quotes
                 WHERE CASE WHEN $3 THEN true ELSE NOT hidden END
-            )
-            RETURNING quote_id",
+            )",
             id,
             user.preferred_username,
             user.admin()
         )
-        .fetch_all(&mut *transaction)
+        .execute(&mut *transaction)
         .await,
         Some(transaction),
     )
     .await
     {
-        Ok((tx, rows)) => {
+        Ok((tx, result)) => {
             transaction = tx.unwrap();
-            if rows.is_empty() {
+            if result.rows_affected() == 0 {
                 return HttpResponse::BadRequest().body("Quote does not exist");
             }
         }
@@ -611,22 +608,21 @@ pub async fn resolve_report(
         Err(res) => return res,
     };
 
-    match log_query_as(
-        query_as!(
-            ID,
-            "UPDATE reports SET resolver=$1 WHERE quote_id=$2 AND resolver IS NULL RETURNING id",
+    match log_query(
+        query!(
+            "UPDATE reports SET resolver=$1 WHERE quote_id=$2 AND resolver IS NULL",
             user.preferred_username,
             id,
         )
-        .fetch_all(&mut *transaction)
+        .execute(&mut *transaction)
         .await,
         Some(transaction),
     )
     .await
     {
-        Ok((tx, ids)) => {
+        Ok((tx, result)) => {
             transaction = tx.unwrap();
-            if ids.is_empty() {
+            if result.rows_affected() == 0 {
                 return HttpResponse::BadRequest()
                     .body("Report is either already resolved or doesn't exist.");
             }
