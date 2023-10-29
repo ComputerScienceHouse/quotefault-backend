@@ -367,9 +367,14 @@ pub async fn report_quote(
     let result = hasher.finalize();
 
     match log_query_as(
-        query_as!(
-            ID,
-            "INSERT INTO reports (quote_id, reason, submitter_hash) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING RETURNING id",
+        query!(
+            "INSERT INTO reports (quote_id, reason, submitter_hash)
+            SELECT $1, $2, $3
+            WHERE $1 IN (
+                SELECT id FROM quotes
+                WHERE NOT hidden
+            )
+            ON CONFLICT DO NOTHING RETURNING id",
             id,
             body.reason,
             result.as_slice()
@@ -380,10 +385,11 @@ pub async fn report_quote(
     )
     .await
     {
-        Ok((tx, ids)) => {
+        Ok((tx, rows)) => {
             transaction = tx.unwrap();
-            if ids.is_empty() {
-                return HttpResponse::BadRequest().body("You have already reported this quote.");
+            if rows.is_empty() {
+                return HttpResponse::BadRequest()
+                    .body("You have already reported this quote or quote does not exist");
             }
         }
         Err(res) => return res,
