@@ -100,6 +100,14 @@ Reports a quote
 }
 ```
 
+### PUT /api/quote/{qid}/resolve
+
+Resolves all reports for a given quote with some action.
+
+#### Params
+
+* `hide` - Whether to hide a quote or not (Default: `false`)
+
 ### GET /api/reports
 
 Returns a list of reports
@@ -120,10 +128,6 @@ Returns a list of reports
     }
 ]
 ```
-
-### PUT /api/report/{rid}/resolve
-
-Resolves a report
 
 ### GET /api/users
 

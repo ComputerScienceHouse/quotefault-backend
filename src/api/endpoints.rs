@@ -7,7 +7,7 @@ use actix_web::{
 };
 use log::{log, Level};
 use sha3::{Digest, Sha3_256};
-use sqlx::{query, query_as};
+use sqlx::{query, query_as, Postgres, Transaction};
 
 use crate::{
     api::db::{log_query, log_query_as, open_transaction},
@@ -16,7 +16,7 @@ use crate::{
     ldap,
     schema::api::{FetchParams, NewQuote, QuoteResponse, QuoteShardResponse},
     schema::{
-        api::{NewReport, ReportResponse, ReportedQuoteResponse, UserResponse},
+        api::{NewReport, ReportResponse, ReportedQuoteResponse, ResolveParams, UserResponse},
         db::{QuoteShard, ReportedQuoteShard, ID},
     },
     utils::is_valid_username,
@@ -161,6 +161,39 @@ async fn fetch_quotes(
     }
 }
 
+pub async fn hide_quote_by_id(
+    id: i32,
+    submitter: String,
+    mut transaction: Transaction<'_, Postgres>,
+) -> Result<Transaction<'_, Postgres>, HttpResponse> {
+    match log_query_as(
+        query!(
+            "UPDATE quotes SET hidden=true WHERE id=$1 AND id IN (
+                SELECT quote_id FROM shards s
+                WHERE s.speaker = $2
+            ) RETURNING id",
+            id,
+            submitter
+        )
+        .fetch_all(&mut *transaction)
+        .await,
+        Some(transaction),
+    )
+    .await
+    {
+        Ok((tx, result)) => {
+            if result.is_empty() {
+                Err(HttpResponse::BadRequest()
+                    .body("Either you are not quoted in this quote or this quote does not exist."))
+            } else {
+                log!(Level::Trace, "hid quote");
+                Ok(tx.unwrap())
+            }
+        }
+        Err(res) => Err(res),
+    }
+}
+
 #[post("/quote", wrap = "CSHAuth::enabled()")]
 pub async fn create_quote(
     state: Data<AppState>,
@@ -299,32 +332,10 @@ pub async fn hide_quote(state: Data<AppState>, path: Path<(i32,)>, user: User) -
         Err(res) => return res,
     };
 
-    match log_query_as(
-        query!(
-            "UPDATE quotes SET hidden=true WHERE id=$1 AND id IN (
-                SELECT quote_id FROM shards s
-                WHERE s.speaker = $2
-            ) RETURNING id",
-            id,
-            user.preferred_username
-        )
-        .fetch_all(&mut *transaction)
-        .await,
-        Some(transaction),
-    )
-    .await
-    {
-        Ok((tx, result)) => {
-            if result.is_empty() {
-                return HttpResponse::BadRequest()
-                    .body("Either you are not quoted in this quote or this quote does not exist.");
-            }
-            transaction = tx.unwrap()
-        }
+    match hide_quote_by_id(id, user.preferred_username, transaction).await {
+        Ok(tx) => transaction = tx,
         Err(res) => return res,
     }
-
-    log!(Level::Trace, "hid quote");
 
     match transaction.commit().await {
         Ok(_) => HttpResponse::Ok().body(""),
@@ -477,11 +488,57 @@ pub async fn get_hidden(state: Data<AppState>, params: web::Query<FetchParams>) 
     fetch_quotes(state, params, true).await
 }
 
-// #[put("/report/{id}/resolve")]
-// pub async fn resolve_report(
-//     state: Data<AppState>,
-//     path: Path<(i32,)>,
-//     user: User,
-// ) -> impl Responder {
-//     let (id,) = path.into_inner();
-// }
+#[put("/quote/{id}/resolve", wrap = "CSHAuth::admin_only()")]
+pub async fn resolve_report(
+    state: Data<AppState>,
+    path: Path<(i32,)>,
+    user: User,
+    params: web::Query<ResolveParams>,
+) -> impl Responder {
+    let (id,) = path.into_inner();
+
+    let mut transaction = match open_transaction(&state.db).await {
+        Ok(t) => t,
+        Err(res) => return res,
+    };
+
+    match log_query_as(
+        query_as!(
+            ID,
+            "UPDATE reports SET resolver=$1 WHERE quote_id=$2 AND resolver IS NULL RETURNING id",
+            user.preferred_username,
+            id,
+        )
+        .fetch_all(&mut *transaction)
+        .await,
+        Some(transaction),
+    )
+    .await
+    {
+        Ok((tx, ids)) => {
+            transaction = tx.unwrap();
+            if ids.is_empty() {
+                return HttpResponse::BadRequest()
+                    .body("Report is either already resolved or doesn't exist.");
+            }
+        }
+        Err(res) => return res,
+    }
+
+    log!(Level::Trace, "resolved all quote's reports");
+
+    if let Some(true) = params.hide {
+        match hide_quote_by_id(id, user.preferred_username, transaction).await {
+            Ok(tx) => transaction = tx,
+            Err(res) => return res,
+        }
+    }
+
+    match transaction.commit().await {
+        Ok(_) => HttpResponse::Ok().body(""),
+        Err(e) => {
+            log!(Level::Error, "Transaction failed to commit");
+            HttpResponse::InternalServerError().body(e.to_string())
+        }
+    }
+}

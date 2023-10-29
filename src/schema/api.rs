@@ -57,3 +57,8 @@ pub struct ReportResponse {
     pub timestamp: chrono::NaiveDateTime,
     pub id: i32,
 }
+
+#[derive(Deserialize, Debug)]
+pub struct ResolveParams {
+    pub hide: Option<bool>,
+}
