@@ -469,7 +469,7 @@ pub async fn get_reports(state: Data<AppState>) -> impl Responder {
                     WHERE r.resolver IS NULL
                 )
             ) AS pq
-            LEFT JOIN reports r ON r.quote_id = pq.id
+            LEFT JOIN reports r ON r.quote_id = pq.id WHERE r.resolver IS NULL
             ORDER BY pq.id, r.id"
         )
         .fetch_all(&state.db)
