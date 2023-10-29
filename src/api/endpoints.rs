@@ -14,10 +14,12 @@ use crate::{
     app::AppState,
     auth::{CSHAuth, User},
     ldap,
-    schema::api::{FetchParams, NewQuote, QuoteResponse, QuoteShardResponse},
     schema::{
-        api::{NewReport, ReportResponse, ReportedQuoteResponse, ResolveParams, UserResponse},
-        db::{QuoteShard, ReportedQuoteShard, ID},
+        api::{
+            FetchParams, NewQuote, NewReport, QuoteResponse, QuoteShardResponse, ReportResponse,
+            ReportedQuoteResponse, ResolveParams, UserResponse, VoteParams,
+        },
+        db::{QuoteShard, ReportedQuoteShard, Vote, ID},
     },
     utils::is_valid_username,
 };
@@ -429,6 +431,61 @@ pub async fn get_quote(state: Data<AppState>, path: Path<(i32,)>) -> impl Respon
             }
         }
         Err(res) => res,
+    }
+}
+
+#[put("/quote/{id}/vote", wrap = "CSHAuth::enabled()")]
+pub async fn vote_quote(
+    state: Data<AppState>,
+    path: Path<(i32,)>,
+    params: web::Query<VoteParams>,
+    user: User,
+) -> impl Responder {
+    let (id,) = path.into_inner();
+    let vote = params.vote.clone();
+
+    let mut transaction = match open_transaction(&state.db).await {
+        Ok(t) => t,
+        Err(res) => return res,
+    };
+
+    match log_query_as(
+        query!(
+            "INSERT INTO votes (quote_id, vote, submitter)
+            SELECT $1, $2, $3
+            WHERE $1 IN (
+                SELECT id FROM quotes
+                WHERE CASE WHEN $4 THEN true ELSE NOT hidden END
+            )
+            ON CONFLICT (quote_id, submitter)
+            DO UPDATE SET vote=$2
+            RETURNING quote_id",
+            id,
+            vote as Vote,
+            user.preferred_username,
+            user.admin()
+        )
+        .fetch_all(&mut *transaction)
+        .await,
+        Some(transaction),
+    )
+    .await
+    {
+        Ok((tx, rows)) => {
+            transaction = tx.unwrap();
+            if rows.is_empty() {
+                return HttpResponse::BadRequest().body("Quote does not exist");
+            }
+        }
+        Err(res) => return res,
+    }
+
+    match transaction.commit().await {
+        Ok(_) => HttpResponse::Ok().body(""),
+        Err(e) => {
+            log!(Level::Error, "Transaction failed to commit");
+            HttpResponse::InternalServerError().body(e.to_string())
+        }
     }
 }
 

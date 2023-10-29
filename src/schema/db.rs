@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 pub struct ID {
     pub id: i32, // SERIAL value
 }
@@ -23,4 +23,12 @@ pub struct ReportedQuoteShard {
     pub report_reason: String,
     pub report_timestamp: chrono::NaiveDateTime,
     pub report_resolver: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, PartialOrd, sqlx::Type, Serialize, Deserialize)]
+#[sqlx(type_name = "vote", rename_all = "lowercase")]
+#[serde(rename_all(deserialize = "lowercase"))]
+pub enum Vote {
+    Upvote,
+    Downvote,
 }

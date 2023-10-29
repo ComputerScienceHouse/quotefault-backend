@@ -100,11 +100,11 @@ impl FromRequest for User {
 }
 
 impl User {
-    fn admin(&self) -> bool {
+    pub fn admin(&self) -> bool {
         self.groups.contains(&String::from("eboard")) || self.groups.contains(&String::from("rtp"))
     }
 
-    fn eboard(&self) -> bool {
+    pub fn eboard(&self) -> bool {
         self.groups.contains(&String::from("eboard"))
     }
 }

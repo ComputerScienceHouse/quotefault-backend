@@ -192,3 +192,19 @@ CREATE TABLE Reports (
     PRIMARY KEY (quote_id, submitter_hash)
 );
 ```
+
+### Votes Table
+
+```SQL
+CREATE TYPE vote AS ENUM ('upvote', 'downvote');
+```
+
+```SQL
+CREATE TABLE Votes (
+    quote_id INT4 REFERENCES quotes(id) ON DELETE CASCADE NOT NULL,
+    vote VOTE NOT NULL,
+    submitter VARCHAR(32) NOT NULL,
+    timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (quote_id, submitter)
+);
+```

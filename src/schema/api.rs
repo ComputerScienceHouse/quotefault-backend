@@ -1,3 +1,4 @@
+use crate::schema::db::Vote;
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Debug)]
@@ -61,4 +62,9 @@ pub struct ReportResponse {
 #[derive(Deserialize, Debug)]
 pub struct ResolveParams {
     pub hide: Option<bool>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct VoteParams {
+    pub vote: Vote,
 }
