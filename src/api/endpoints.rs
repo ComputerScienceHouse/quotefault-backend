@@ -440,7 +440,7 @@ pub async fn get_quote(state: Data<AppState>, path: Path<(i32,)>) -> impl Respon
     }
 }
 
-#[put("/quote/{id}/vote", wrap = "CSHAuth::enabled()")]
+#[post("/quote/{id}/vote", wrap = "CSHAuth::enabled()")]
 pub async fn vote_quote(
     state: Data<AppState>,
     path: Path<(i32,)>,
@@ -468,6 +468,52 @@ pub async fn vote_quote(
             RETURNING quote_id",
             id,
             vote as Vote,
+            user.preferred_username,
+            user.admin()
+        )
+        .fetch_all(&mut *transaction)
+        .await,
+        Some(transaction),
+    )
+    .await
+    {
+        Ok((tx, rows)) => {
+            transaction = tx.unwrap();
+            if rows.is_empty() {
+                return HttpResponse::BadRequest().body("Quote does not exist");
+            }
+        }
+        Err(res) => return res,
+    }
+
+    match transaction.commit().await {
+        Ok(_) => HttpResponse::Ok().body(""),
+        Err(e) => {
+            log!(Level::Error, "Transaction failed to commit");
+            HttpResponse::InternalServerError().body(e.to_string())
+        }
+    }
+}
+
+#[delete("/quote/{id}/vote", wrap = "CSHAuth::enabled()")]
+pub async fn unvote_quote(state: Data<AppState>, path: Path<(i32,)>, user: User) -> impl Responder {
+    let (id,) = path.into_inner();
+
+    let mut transaction = match open_transaction(&state.db).await {
+        Ok(t) => t,
+        Err(res) => return res,
+    };
+
+    match log_query_as(
+        query!(
+            "DELETE FROM votes 
+            WHERE quote_id=$1 AND submitter=$2
+            AND $1 IN (
+                SELECT id FROM quotes
+                WHERE CASE WHEN $3 THEN true ELSE NOT hidden END
+            )
+            RETURNING quote_id",
+            id,
             user.preferred_username,
             user.admin()
         )
