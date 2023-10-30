@@ -110,82 +110,6 @@ fn format_reports(quotes: &[ReportedQuoteShard]) -> Vec<ReportedQuoteResponse> {
     reported_quotes.into_values().collect()
 }
 
-async fn fetch_quotes(
-    state: Data<AppState>,
-    params: web::Query<FetchParams>,
-    user: User,
-    is_hidden: bool,
-) -> impl Responder {
-    let limit: i64 = params.limit.unwrap_or(10).into();
-    let lt_qid: i32 = params.lt.unwrap_or(0);
-    let query: String = params
-        .q
-        .clone()
-        .map(|x| format!("%({})%", (x.replace(' ', "|"))))
-        .unwrap_or("%%".into());
-    let speaker = params.speaker.clone().unwrap_or("%".to_string());
-    let submitter = params.submitter.clone().unwrap_or("%".to_string());
-    match log_query_as(
-        query_as!(
-            QuoteShard,
-            "SELECT pq.id as \"id!\", s.index as \"index!\", pq.submitter as \"submitter!\",
-            pq.timestamp as \"timestamp!\", s.body as \"body!\", s.speaker as \"speaker!\",
-            v.vote as \"vote: Option<Vote>\",
-            (CASE WHEN t.score IS NULL THEN 0 ELSE t.score END) AS \"score!\"
-            FROM (
-                SELECT * FROM quotes q
-                WHERE hidden = $6
-                AND CASE WHEN $2::int4 > 0 THEN q.id < $2::int4 ELSE true END
-                AND submitter LIKE $5
-                AND q.id IN (
-                    SELECT quote_id FROM shards s
-                    WHERE LOWER(body) SIMILAR TO LOWER($3)
-                    AND speaker LIKE $4
-                )
-                ORDER BY q.id DESC
-                LIMIT $1
-            ) AS pq
-            LEFT JOIN shards s ON s.quote_id = pq.id
-            LEFT JOIN (
-                SELECT quote_id, vote FROM votes
-                WHERE submitter=$7
-            ) v ON v.quote_id = pq.id
-            LEFT JOIN (
-                SELECT
-                    quote_id,
-                    SUM(
-                        CASE
-                            WHEN vote='upvote' THEN 1 
-                            WHEN vote='downvote' THEN -1
-                            ELSE 0
-                        END
-                    ) AS score
-                FROM votes
-                GROUP BY quote_id
-            ) t ON t.quote_id = pq.id
-            ORDER BY timestamp DESC, pq.id DESC, s.index",
-            limit,
-            lt_qid,
-            query,
-            speaker,
-            submitter,
-            is_hidden,
-            user.preferred_username,
-        )
-        .fetch_all(&state.db)
-        .await,
-        None,
-    )
-    .await
-    {
-        Ok((_, shards)) => match shards_to_quotes(shards.as_slice(), &state.ldap).await {
-            Ok(quotes) => HttpResponse::Ok().json(quotes),
-            Err(response) => response,
-        },
-        Err(res) => res,
-    }
-}
-
 pub async fn hide_quote_by_id(
     id: i32,
     submitter: String,
@@ -590,7 +514,80 @@ pub async fn get_quotes(
     params: web::Query<FetchParams>,
     user: User,
 ) -> impl Responder {
-    fetch_quotes(state, params, user, false).await
+    let limit: i64 = params.limit.unwrap_or(10).into();
+    let lt_qid: i32 = params.lt.unwrap_or(0);
+    let query: String = params
+        .q
+        .clone()
+        .map(|x| format!("%({})%", (x.replace(' ', "|"))))
+        .unwrap_or("%%".into());
+    let speaker = params.speaker.clone().unwrap_or("%".to_string());
+    let submitter = params.submitter.clone().unwrap_or("%".to_string());
+    let hidden = params.hidden.unwrap_or(false);
+    match log_query_as(
+        query_as!(
+            QuoteShard,
+            "SELECT pq.id as \"id!\", s.index as \"index!\", pq.submitter as \"submitter!\",
+            pq.timestamp as \"timestamp!\", s.body as \"body!\", s.speaker as \"speaker!\",
+            v.vote as \"vote: Option<Vote>\",
+            (CASE WHEN t.score IS NULL THEN 0 ELSE t.score END) AS \"score!\"
+            FROM (
+                SELECT * FROM quotes q
+                WHERE CASE
+                    WHEN $6 AND $8 THEN hidden=true
+                    WHEN $6 THEN (hidden=false AND submitter=$7)
+                    ELSE hidden=false
+                END
+                AND CASE WHEN $2::int4 > 0 THEN q.id < $2::int4 ELSE true END
+                AND submitter LIKE $5
+                AND q.id IN (
+                    SELECT quote_id FROM shards s
+                    WHERE LOWER(body) SIMILAR TO LOWER($3)
+                    AND speaker LIKE $4
+                )
+                ORDER BY q.id DESC
+                LIMIT $1
+            ) AS pq
+            LEFT JOIN shards s ON s.quote_id = pq.id
+            LEFT JOIN (
+                SELECT quote_id, vote FROM votes
+                WHERE submitter=$7
+            ) v ON v.quote_id = pq.id
+            LEFT JOIN (
+                SELECT
+                    quote_id,
+                    SUM(
+                        CASE
+                            WHEN vote='upvote' THEN 1 
+                            WHEN vote='downvote' THEN -1
+                            ELSE 0
+                        END
+                    ) AS score
+                FROM votes
+                GROUP BY quote_id
+            ) t ON t.quote_id = pq.id
+            ORDER BY timestamp DESC, pq.id DESC, s.index",
+            limit,
+            lt_qid,
+            query,
+            speaker,
+            submitter,
+            hidden,
+            user.preferred_username,
+            user.admin(),
+        )
+        .fetch_all(&state.db)
+        .await,
+        None,
+    )
+    .await
+    {
+        Ok((_, shards)) => match shards_to_quotes(shards.as_slice(), &state.ldap).await {
+            Ok(quotes) => HttpResponse::Ok().json(quotes),
+            Err(response) => response,
+        },
+        Err(res) => res,
+    }
 }
 
 #[get("/users", wrap = "CSHAuth::enabled()")]
@@ -637,15 +634,6 @@ pub async fn get_reports(state: Data<AppState>) -> impl Responder {
         Ok((_, reports)) => HttpResponse::Ok().json(format_reports(reports.as_slice())),
         Err(res) => res,
     }
-}
-
-#[get("/hidden", wrap = "CSHAuth::admin_only()")]
-pub async fn get_hidden(
-    state: Data<AppState>,
-    params: web::Query<FetchParams>,
-    user: User,
-) -> impl Responder {
-    fetch_quotes(state, params, user, true).await
 }
 
 #[put("/quote/{id}/resolve", wrap = "CSHAuth::admin_only()")]

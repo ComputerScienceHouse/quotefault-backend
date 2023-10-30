@@ -30,6 +30,7 @@ Queries a list of quotes. With no parameters it returns the most recent 10 quote
 * `limit={num}` - The maximum number of entries to return (default: 10)
 * `submitter={username}` - Filters for quotes submitted by a certain user
 * `speaker={username}` - Filters for quotes said by a certain user
+* `hidden={bool}` - Filters for quotes that are hidden and visible to user (if admin, this means all hidden quotes. If normal user, this means their hidden quotes)
 
 #### Response
 ```json

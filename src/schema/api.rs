@@ -24,6 +24,7 @@ pub struct FetchParams {
     pub limit: Option<u32>,
     pub submitter: Option<String>,
     pub speaker: Option<String>,
+    pub hidden: Option<bool>,
 }
 
 #[derive(Serialize, Debug)]
