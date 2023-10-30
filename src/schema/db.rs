@@ -13,6 +13,7 @@ pub struct QuoteShard {
     pub timestamp: chrono::NaiveDateTime,
     pub vote: Option<Vote>,
     pub score: i64,
+    pub hidden: bool,
 }
 
 #[derive(Serialize, Debug)]

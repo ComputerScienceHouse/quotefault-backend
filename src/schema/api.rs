@@ -24,6 +24,7 @@ pub struct FetchParams {
     pub limit: Option<u32>,
     pub submitter: Option<String>,
     pub speaker: Option<String>,
+    pub involved: Option<String>,
     pub hidden: Option<bool>,
 }
 
@@ -35,6 +36,7 @@ pub struct QuoteResponse {
     pub id: i32,
     pub vote: Option<Vote>,
     pub score: i64,
+    pub hidden: bool,
 }
 
 #[derive(Serialize, Debug)]

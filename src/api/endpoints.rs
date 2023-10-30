@@ -72,6 +72,7 @@ async fn shards_to_quotes(
                 score: shard.score,
                 vote: shard.vote.clone(),
                 submitter,
+                hidden: shard.hidden,
             });
         } else {
             quotes.last_mut().unwrap().shards.push(QuoteShardResponse {
@@ -370,7 +371,7 @@ pub async fn get_quote(state: Data<AppState>, path: Path<(i32,)>, user: User) ->
             QuoteShard,
             "SELECT pq.id as \"id!\", s.index as \"index!\", pq.submitter as \"submitter!\",
             pq.timestamp as \"timestamp!\", s.body as \"body!\", s.speaker as \"speaker!\",
-            v.vote as \"vote: Option<Vote>\",
+            pq.hidden as \"hidden!\", v.vote as \"vote: Option<Vote>\",
             (CASE WHEN t.score IS NULL THEN 0 ELSE t.score END) AS \"score!\"
             FROM (
                 SELECT * FROM quotes q
@@ -533,25 +534,29 @@ pub async fn get_quotes(
         .unwrap_or("%%".into());
     let speaker = params.speaker.clone().unwrap_or("%".to_string());
     let submitter = params.submitter.clone().unwrap_or("%".to_string());
+    let involved = params.involved.clone().unwrap_or("%".to_string());
     let hidden = params.hidden.unwrap_or(false);
+    let filter_by_hidden = params.hidden.is_some();
     match log_query_as(
         query_as!(
             QuoteShard,
             "SELECT pq.id as \"id!\", s.index as \"index!\", pq.submitter as \"submitter!\",
             pq.timestamp as \"timestamp!\", s.body as \"body!\", s.speaker as \"speaker!\",
-            v.vote as \"vote: Option<Vote>\",
+            pq.hidden as \"hidden!\", v.vote as \"vote: Option<Vote>\",
             (CASE WHEN t.score IS NULL THEN 0 ELSE t.score END) AS \"score!\"
             FROM (
                 SELECT * FROM quotes q
                 WHERE CASE
-                    WHEN $6 AND $8 THEN hidden=true
-                    WHEN $6 THEN (hidden=true 
-                        AND (submitter=$7 OR $7 IN (SELECT speaker FROM shards))
+                    WHEN $7 AND $9 THEN hidden=$6
+                    WHEN $7 AND $6 THEN (hidden=true
+                        AND (submitter=$8 OR $8 IN (SELECT speaker FROM shards))
                     )
-                    ELSE hidden=false
+                    WHEN $7 AND NOT $6 THEN hidden=false
+                    ELSE ((hidden=true AND (submitter=$8 OR $8 IN (SELECT speaker FROM shards))) OR (hidden=false))
                 END
                 AND CASE WHEN $2::int4 > 0 THEN q.id < $2::int4 ELSE true END
                 AND submitter LIKE $5
+                AND (submitter LIKE $10 OR q.id IN (SELECT quote_id FROM shards s WHERE speaker LIKE $10))
                 AND q.id IN (
                     SELECT quote_id FROM shards s
                     WHERE LOWER(body) SIMILAR TO LOWER($3)
@@ -563,7 +568,7 @@ pub async fn get_quotes(
             LEFT JOIN shards s ON s.quote_id = pq.id
             LEFT JOIN (
                 SELECT quote_id, vote FROM votes
-                WHERE submitter=$7
+                WHERE submitter=$8
             ) v ON v.quote_id = pq.id
             LEFT JOIN (
                 SELECT
@@ -585,8 +590,10 @@ pub async fn get_quotes(
             speaker,
             submitter,
             hidden,
+            filter_by_hidden,
             user.preferred_username,
             user.admin(),
+            involved,
         )
         .fetch_all(&state.db)
         .await,
