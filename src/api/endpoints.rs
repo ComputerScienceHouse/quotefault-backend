@@ -112,17 +112,19 @@ fn format_reports(quotes: &[ReportedQuoteShard]) -> Vec<ReportedQuoteResponse> {
 
 pub async fn hide_quote_by_id(
     id: i32,
-    submitter: String,
+    user: User,
     mut transaction: Transaction<'_, Postgres>,
 ) -> Result<Transaction<'_, Postgres>, HttpResponse> {
     match log_query(
         query!(
-            "UPDATE quotes SET hidden=true WHERE id=$1 AND id IN (
+            "UPDATE quotes SET hidden=true WHERE id=$1
+            AND ($3 OR id IN (
                 SELECT quote_id FROM shards s
                 WHERE s.speaker = $2
-            )",
+            ))",
             id,
-            submitter
+            user.preferred_username,
+            user.admin(),
         )
         .execute(&mut *transaction)
         .await,
@@ -211,7 +213,15 @@ pub async fn create_quote(
     let speakers: Vec<String> = body.shards.iter().map(|s| s.speaker.clone()).collect();
 
     match log_query(
-        query!("INSERT INTO Shards (quote_id, index, body, speaker) SELECT quote_id, index, body, speaker FROM UNNEST($1::int4[], $2::int2[], $3::text[], $4::varchar[]) as a(quote_id, index, body, speaker)", ids.as_slice(), indices.as_slice(), bodies.as_slice(), speakers.as_slice())
+        query!(
+            "INSERT INTO Shards (quote_id, index, body, speaker)
+            SELECT quote_id, index, body, speaker
+            FROM UNNEST($1::int4[], $2::int2[], $3::text[], $4::varchar[]) as a(quote_id, index, body, speaker)",
+            ids.as_slice(),
+            indices.as_slice(),
+            bodies.as_slice(),
+            speakers.as_slice()
+        )
         .execute(&mut *transaction)
         .await, Some(transaction)).await {
         Ok((tx, _)) => transaction = tx.unwrap(),
@@ -280,7 +290,7 @@ pub async fn hide_quote(state: Data<AppState>, path: Path<(i32,)>, user: User) -
         Err(res) => return res,
     };
 
-    match hide_quote_by_id(id, user.preferred_username, transaction).await {
+    match hide_quote_by_id(id, user, transaction).await {
         Ok(tx) => transaction = tx,
         Err(res) => return res,
     }
@@ -677,7 +687,7 @@ pub async fn resolve_report(
     log!(Level::Trace, "resolved all quote's reports");
 
     if let Some(true) = params.hide {
-        match hide_quote_by_id(id, user.preferred_username, transaction).await {
+        match hide_quote_by_id(id, user, transaction).await {
             Ok(tx) => transaction = tx,
             Err(res) => return res,
         }
