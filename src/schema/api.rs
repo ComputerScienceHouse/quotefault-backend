@@ -79,4 +79,5 @@ pub struct VersionResponse {
     pub revision: String,
     pub date: String,
     pub build_date: String,
+    pub url: String,
 }

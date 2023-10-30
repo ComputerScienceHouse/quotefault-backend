@@ -715,5 +715,6 @@ pub async fn get_version() -> impl Responder {
         build_date: env!("VERGEN_BUILD_TIMESTAMP").to_string(),
         date: env!("VERGEN_GIT_COMMIT_TIMESTAMP").to_string(),
         revision: env!("VERGEN_GIT_SHA").to_string(),
+        url: env!("REPO_URL").to_string(),
     })
 }

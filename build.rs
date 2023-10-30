@@ -7,4 +7,6 @@ fn main() {
         .git_commit_timestamp() // outputs 'VERGEN_GIT_COMMIT_TIMESTAMP'
         .emit()
         .expect("Unable to generate the cargo keys!");
+    let repo_url = "https://github.com/costowell/quotefault-backend";
+    println!("cargo:rustc-env=REPO_URL={repo_url}");
 }
