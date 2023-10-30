@@ -535,7 +535,9 @@ pub async fn get_quotes(
                 SELECT * FROM quotes q
                 WHERE CASE
                     WHEN $6 AND $8 THEN hidden=true
-                    WHEN $6 THEN (hidden=false AND submitter=$7)
+                    WHEN $6 THEN (hidden=true 
+                        AND (submitter=$7 OR $7 IN (SELECT speaker FROM shards))
+                    )
                     ELSE hidden=false
                 END
                 AND CASE WHEN $2::int4 > 0 THEN q.id < $2::int4 ELSE true END
