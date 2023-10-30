@@ -17,7 +17,7 @@ use crate::{
     schema::{
         api::{
             FetchParams, NewQuote, NewReport, QuoteResponse, QuoteShardResponse, ReportResponse,
-            ReportedQuoteResponse, ResolveParams, UserResponse, VoteParams,
+            ReportedQuoteResponse, ResolveParams, UserResponse, VersionResponse, VoteParams,
         },
         db::{QuoteShard, ReportedQuoteShard, Vote, ID},
     },
@@ -707,4 +707,13 @@ pub async fn resolve_report(
             HttpResponse::InternalServerError().body(e.to_string())
         }
     }
+}
+
+#[get("/version", wrap = "CSHAuth::enabled()")]
+pub async fn get_version() -> impl Responder {
+    HttpResponse::Ok().json(VersionResponse {
+        build_date: env!("VERGEN_BUILD_TIMESTAMP").to_string(),
+        date: env!("VERGEN_GIT_COMMIT_TIMESTAMP").to_string(),
+        revision: env!("VERGEN_GIT_SHA").to_string(),
+    })
 }

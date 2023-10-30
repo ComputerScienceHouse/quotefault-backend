@@ -5,8 +5,8 @@ use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 
 use crate::{
     api::endpoints::{
-        create_quote, delete_quote, get_quote, get_quotes, get_reports, get_users, hide_quote,
-        report_quote, resolve_report, unvote_quote, vote_quote,
+        create_quote, delete_quote, get_quote, get_quotes, get_reports, get_users, get_version,
+        hide_quote, report_quote, resolve_report, unvote_quote, vote_quote,
     },
     ldap::client::LdapClient,
 };
@@ -29,7 +29,8 @@ pub fn configure_app(cfg: &mut web::ServiceConfig) {
             .service(report_quote)
             .service(resolve_report)
             .service(vote_quote)
-            .service(unvote_quote),
+            .service(unvote_quote)
+            .service(get_version),
     );
 }
 

@@ -28,3 +28,6 @@ openssl = "0.10.57"
 futures = "0.3.28"
 sha3 = "0.10.8"
 env_logger = "0.10.0"
+
+[build-dependencies]
+vergen = { version = "8", default-features = false, features = ["build", "git", "gitcl"] }

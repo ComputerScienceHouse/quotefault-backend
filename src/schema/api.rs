@@ -73,3 +73,10 @@ pub struct ResolveParams {
 pub struct VoteParams {
     pub vote: Vote,
 }
+
+#[derive(Serialize, Debug)]
+pub struct VersionResponse {
+    pub revision: String,
+    pub date: String,
+    pub build_date: String,
+}
