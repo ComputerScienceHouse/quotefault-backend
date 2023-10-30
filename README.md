@@ -49,7 +49,9 @@ Queries a list of quotes. With no parameters it returns the most recent 10 quote
                 }
             }
         ],
-        "id": 26
+        "id": 26,
+        "vote": "upvote",
+        "score": 1
     }
 ]
 ```
@@ -76,7 +78,9 @@ Queries for a specific quote by id.
             }
         }
     ],
-    "id": 26
+    "id": 26,
+    "vote": "upvote",
+    "score": 1
 }
 ```
 
