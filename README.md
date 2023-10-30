@@ -160,6 +160,18 @@ Takes and returns the same data as `/api/quotes`
 ]
 ```
 
+### GET /api/version
+
+#### Response
+
+```json
+{
+    "revision": "51b5766ef81e619b0c1c46d9ab1edaa182d682f4",
+    "date": "2023-10-30T17:58:49.000000000-04:00",
+    "build_date": "2023-10-30T22:00:27.922648431Z"
+}
+```
+
 ## Database Schema
 
 ### Quotes Table
