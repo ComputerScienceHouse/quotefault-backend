@@ -69,6 +69,8 @@ async fn shards_to_quotes(
                     speaker,
                 }],
                 timestamp: shard.timestamp,
+                score: shard.score,
+                vote: shard.vote.clone(),
                 submitter,
             });
         } else {
@@ -111,6 +113,7 @@ fn format_reports(quotes: &[ReportedQuoteShard]) -> Vec<ReportedQuoteResponse> {
 async fn fetch_quotes(
     state: Data<AppState>,
     params: web::Query<FetchParams>,
+    user: User,
     is_hidden: bool,
 ) -> impl Responder {
     let limit: i64 = params.limit.unwrap_or(10).into();
@@ -126,7 +129,9 @@ async fn fetch_quotes(
         query_as!(
             QuoteShard,
             "SELECT pq.id as \"id!\", s.index as \"index!\", pq.submitter as \"submitter!\",
-            pq.timestamp as \"timestamp!\", s.body as \"body!\", s.speaker as \"speaker!\"
+            pq.timestamp as \"timestamp!\", s.body as \"body!\", s.speaker as \"speaker!\",
+            v.vote as \"vote: Option<Vote>\",
+            (CASE WHEN t.score IS NULL THEN 0 ELSE t.score END) AS \"score!\"
             FROM (
                 SELECT * FROM quotes q
                 WHERE hidden = $6
@@ -141,6 +146,23 @@ async fn fetch_quotes(
                 LIMIT $1
             ) AS pq
             LEFT JOIN shards s ON s.quote_id = pq.id
+            LEFT JOIN (
+                SELECT quote_id, vote FROM votes
+                WHERE submitter=$7
+            ) v ON v.quote_id = pq.id
+            LEFT JOIN (
+                SELECT
+                    quote_id,
+                    SUM(
+                        CASE
+                            WHEN vote='upvote' THEN 1 
+                            WHEN vote='downvote' THEN -1
+                            ELSE 0
+                        END
+                    ) AS score
+                FROM votes
+                GROUP BY quote_id
+            ) t ON t.quote_id = pq.id
             ORDER BY timestamp DESC, pq.id DESC, s.index",
             limit,
             lt_qid,
@@ -148,6 +170,7 @@ async fn fetch_quotes(
             speaker,
             submitter,
             is_hidden,
+            user.preferred_username,
         )
         .fetch_all(&state.db)
         .await,
@@ -405,19 +428,42 @@ pub async fn report_quote(
 }
 
 #[get("/quote/{id}", wrap = "CSHAuth::enabled()")]
-pub async fn get_quote(state: Data<AppState>, path: Path<(i32,)>) -> impl Responder {
+pub async fn get_quote(state: Data<AppState>, path: Path<(i32,)>, user: User) -> impl Responder {
     let (id,) = path.into_inner();
 
     match log_query_as(
         query_as!(
             QuoteShard,
             "SELECT pq.id as \"id!\", s.index as \"index!\", pq.submitter as \"submitter!\",
-            pq.timestamp as \"timestamp!\", s.body as \"body!\", s.speaker as \"speaker!\"
+            pq.timestamp as \"timestamp!\", s.body as \"body!\", s.speaker as \"speaker!\",
+            v.vote as \"vote: Option<Vote>\",
+            (CASE WHEN t.score IS NULL THEN 0 ELSE t.score END) AS \"score!\"
             FROM (
-                SELECT * FROM quotes q WHERE q.id = $1
+                SELECT * FROM quotes q
+                WHERE q.id = $1
+                AND CASE WHEN $3 THEN true ELSE NOT q.hidden END
             ) AS pq
-            LEFT JOIN shards s ON s.quote_id = pq.id",
+            LEFT JOIN shards s ON s.quote_id = pq.id
+            LEFT JOIN (
+                SELECT quote_id, vote FROM votes
+                WHERE submitter=$2
+            ) v ON v.quote_id = pq.id
+            LEFT JOIN (
+                SELECT
+                    quote_id,
+                    SUM(
+                        CASE
+                            WHEN vote='upvote' THEN 1 
+                            WHEN vote='downvote' THEN -1
+                            ELSE 0
+                        END
+                    ) AS score
+                FROM votes
+                GROUP BY quote_id
+            ) t ON t.quote_id = pq.id",
             id,
+            user.preferred_username,
+            user.admin(),
         )
         .fetch_all(&state.db)
         .await,
@@ -539,8 +585,12 @@ pub async fn unvote_quote(state: Data<AppState>, path: Path<(i32,)>, user: User)
 }
 
 #[get("/quotes", wrap = "CSHAuth::enabled()")]
-pub async fn get_quotes(state: Data<AppState>, params: web::Query<FetchParams>) -> impl Responder {
-    fetch_quotes(state, params, false).await
+pub async fn get_quotes(
+    state: Data<AppState>,
+    params: web::Query<FetchParams>,
+    user: User,
+) -> impl Responder {
+    fetch_quotes(state, params, user, false).await
 }
 
 #[get("/users", wrap = "CSHAuth::enabled()")]
@@ -590,8 +640,12 @@ pub async fn get_reports(state: Data<AppState>) -> impl Responder {
 }
 
 #[get("/hidden", wrap = "CSHAuth::admin_only()")]
-pub async fn get_hidden(state: Data<AppState>, params: web::Query<FetchParams>) -> impl Responder {
-    fetch_quotes(state, params, true).await
+pub async fn get_hidden(
+    state: Data<AppState>,
+    params: web::Query<FetchParams>,
+    user: User,
+) -> impl Responder {
+    fetch_quotes(state, params, user, true).await
 }
 
 #[put("/quote/{id}/resolve", wrap = "CSHAuth::admin_only()")]

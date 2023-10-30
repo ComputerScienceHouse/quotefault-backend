@@ -32,6 +32,8 @@ pub struct QuoteResponse {
     pub timestamp: chrono::NaiveDateTime,
     pub shards: Vec<QuoteShardResponse>,
     pub id: i32,
+    pub vote: Option<Vote>,
+    pub score: i64,
 }
 
 #[derive(Serialize, Debug)]

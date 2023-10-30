@@ -11,6 +11,8 @@ pub struct QuoteShard {
     pub submitter: String,
     pub speaker: String,
     pub timestamp: chrono::NaiveDateTime,
+    pub vote: Option<Vote>,
+    pub score: i64,
 }
 
 #[derive(Serialize, Debug)]
@@ -27,7 +29,7 @@ pub struct ReportedQuoteShard {
 
 #[derive(Clone, Debug, PartialEq, PartialOrd, sqlx::Type, Serialize, Deserialize)]
 #[sqlx(type_name = "vote", rename_all = "lowercase")]
-#[serde(rename_all(deserialize = "lowercase"))]
+#[serde(rename_all = "lowercase")]
 pub enum Vote {
     Upvote,
     Downvote,
