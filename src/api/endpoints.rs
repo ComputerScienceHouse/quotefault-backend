@@ -160,12 +160,13 @@ pub async fn create_quote(
     if body.shards.len() > 50 {
         return HttpResponse::BadRequest().body("Maximum of 50 shards exceeded.");
     }
-    if body
-        .shards
-        .iter()
-        .any(|x| !is_valid_username(x.speaker.as_str()))
-    {
-        return HttpResponse::BadRequest().body("Invalid speaker username format specified.");
+    for shard in &body.shards {
+        if !is_valid_username(shard.speaker.as_str()) {
+            return HttpResponse::BadRequest().body("Invalid speaker username format specified.");
+        }
+        if user.preferred_username == shard.speaker {
+            return HttpResponse::BadRequest().body("Erm... maybe don't quote yourself?");
+        }
     }
     if !is_valid_username(user.preferred_username.as_str()) {
         return HttpResponse::BadRequest()
