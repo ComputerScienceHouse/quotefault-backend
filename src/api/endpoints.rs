@@ -10,7 +10,10 @@ use sha3::{Digest, Sha3_256};
 use sqlx::{query, query_as, Postgres, Transaction};
 
 use crate::{
-    api::db::{log_query, log_query_as, open_transaction},
+    api::{
+        db::{log_query, log_query_as, open_transaction},
+        pings::send_ping,
+    },
     app::AppState,
     auth::{CSHAuth, User},
     ldap,
@@ -233,7 +236,20 @@ pub async fn create_quote(
     log!(Level::Trace, "created quote shards");
 
     match transaction.commit().await {
-        Ok(_) => HttpResponse::Ok().body(""),
+        Ok(_) => {
+            for shard in &body.shards {
+                if let Err(err) = send_ping(
+                    shard.speaker.clone(),
+                    format!(
+                        "You were quoted by {}. Check it out at Quotefault!",
+                        user.preferred_username
+                    ),
+                ) {
+                    log!(Level::Error, "Failed to ping: {}", err);
+                }
+            }
+            HttpResponse::Ok().body("")
+        }
         Err(e) => {
             log!(Level::Error, "Transaction failed to commit");
             HttpResponse::InternalServerError().body(e.to_string())
@@ -528,11 +544,10 @@ pub async fn get_quotes(
 ) -> impl Responder {
     let limit: i64 = params.limit.unwrap_or(10).into();
     let lt_qid: i32 = params.lt.unwrap_or(0);
-    let query: String = params
+    let query = params
         .q
         .clone()
-        .map(|x| format!("%({})%", (x.replace(' ', "|"))))
-        .unwrap_or("%%".into());
+        .map_or("%".to_string(), |q| format!("%{q}%"));
     let speaker = params.speaker.clone().unwrap_or("%".to_string());
     let submitter = params.submitter.clone().unwrap_or("%".to_string());
     let involved = params.involved.clone().unwrap_or("%".to_string());
@@ -560,7 +575,7 @@ pub async fn get_quotes(
                 AND (submitter LIKE $10 OR q.id IN (SELECT quote_id FROM shards s WHERE speaker LIKE $10))
                 AND q.id IN (
                     SELECT quote_id FROM shards s
-                    WHERE LOWER(body) SIMILAR TO LOWER($3)
+                    WHERE body ILIKE $3
                     AND speaker LIKE $4
                 )
                 ORDER BY q.id DESC
