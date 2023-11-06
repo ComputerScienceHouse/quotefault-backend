@@ -563,12 +563,18 @@ pub async fn get_quotes(
             FROM (
                 SELECT * FROM quotes q
                 WHERE CASE
-                    WHEN $7 AND $9 THEN hidden=$6
-                    WHEN $7 AND $6 THEN (hidden=true
-                        AND (submitter=$8 OR $8 IN (SELECT speaker FROM shards))
-                    )
-                    WHEN $7 AND NOT $6 THEN hidden=false
-                    ELSE ((hidden=true AND (submitter=$8 OR $8 IN (SELECT speaker FROM shards))) OR (hidden=false))
+                    WHEN $7 AND $6 AND $9 THEN hidden=TRUE
+                    WHEN $7 AND $6 THEN CASE
+                        WHEN (q.submitter=$8 
+                            OR $8 IN (SELECT speaker FROM shards WHERE quote_id=q.id))
+                            THEN hidden=TRUE
+                        ELSE FALSE
+                    END
+                    WHEN $7 AND NOT $6 THEN hidden=FALSE
+                    ELSE hidden=(q.hidden AND
+                        (q.submitter=$8 OR $8 IN (
+                            SELECT speaker FROM shards
+                            WHERE quote_id=q.id)))
                 END
                 AND CASE WHEN $2::int4 > 0 THEN q.id < $2::int4 ELSE true END
                 AND submitter LIKE $5
@@ -600,16 +606,16 @@ pub async fn get_quotes(
                 GROUP BY quote_id
             ) t ON t.quote_id = pq.id
             ORDER BY timestamp DESC, pq.id DESC, s.index",
-            limit,
-            lt_qid,
-            query,
-            speaker,
-            submitter,
-            hidden,
-            filter_by_hidden,
-            user.preferred_username,
-            user.admin(),
-            involved,
+            limit, // $1
+            lt_qid, // $2
+            query, // $3
+            speaker, // $4
+            submitter, // $5
+            hidden, // $6
+            filter_by_hidden, // $7
+            user.preferred_username, // $8
+            user.admin(), // $9
+            involved, // $10
         )
         .fetch_all(&state.db)
         .await,
