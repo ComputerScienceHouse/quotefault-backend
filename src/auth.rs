@@ -255,7 +255,7 @@ pub struct CSHAuth {
 }
 
 lazy_static! {
-    static ref SECURITY_ENABLED: bool = env::var("SECURITY_ENABLED")
+    pub static ref SECURITY_ENABLED: bool = env::var("SECURITY_ENABLED")
         .map(|x| x.parse::<bool>().unwrap_or(true))
         .unwrap_or(true);
 }

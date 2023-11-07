@@ -15,7 +15,7 @@ use crate::{
         pings::send_ping,
     },
     app::AppState,
-    auth::{CSHAuth, User},
+    auth::{CSHAuth, User, SECURITY_ENABLED},
     ldap,
     schema::{
         api::{
@@ -128,7 +128,7 @@ pub async fn hide_quote_by_id(
             ))",
             id,
             user.preferred_username,
-            user.admin(),
+            user.admin() || !*SECURITY_ENABLED,
         )
         .execute(&mut *transaction)
         .await,
@@ -415,7 +415,7 @@ pub async fn get_quote(state: Data<AppState>, path: Path<(i32,)>, user: User) ->
             ) t ON t.quote_id = pq.id",
             id,
             user.preferred_username,
-            user.admin(),
+            user.admin() || !*SECURITY_ENABLED,
         )
         .fetch_all(&state.db)
         .await,
@@ -465,7 +465,7 @@ pub async fn vote_quote(
             id,
             vote as Vote,
             user.preferred_username,
-            user.admin()
+            user.admin() || !*SECURITY_ENABLED
         )
         .execute(&mut *transaction)
         .await,
@@ -510,7 +510,7 @@ pub async fn unvote_quote(state: Data<AppState>, path: Path<(i32,)>, user: User)
             )",
             id,
             user.preferred_username,
-            user.admin()
+            user.admin() || !*SECURITY_ENABLED
         )
         .execute(&mut *transaction)
         .await,
@@ -614,7 +614,7 @@ pub async fn get_quotes(
             hidden, // $6
             filter_by_hidden, // $7
             user.preferred_username, // $8
-            user.admin(), // $9
+            user.admin() || !*SECURITY_ENABLED, // $9
             involved, // $10
         )
         .fetch_all(&state.db)
