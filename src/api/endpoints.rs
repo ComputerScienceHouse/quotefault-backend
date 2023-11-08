@@ -160,8 +160,8 @@ pub async fn create_quote(
     if body.shards.is_empty() {
         return HttpResponse::BadRequest().body("No quote shards specified");
     }
-    if body.shards.len() > 50 {
-        return HttpResponse::BadRequest().body("Maximum of 50 shards exceeded.");
+    if body.shards.len() > 6 {
+        return HttpResponse::BadRequest().body("Maximum of 6 shards exceeded.");
     }
     for shard in &body.shards {
         if !is_valid_username(shard.speaker.as_str()) {
