@@ -21,7 +21,7 @@ pub struct NewReport {
 pub struct FetchParams {
     pub q: Option<String>,
     pub lt: Option<i32>,
-    pub limit: Option<u32>,
+    pub limit: Option<i64>,
     pub submitter: Option<String>,
     pub speaker: Option<String>,
     pub involved: Option<String>,

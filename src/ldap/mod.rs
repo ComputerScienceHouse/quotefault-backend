@@ -85,7 +85,11 @@ pub async fn get_users(
             "(|{})",
             users
                 .iter()
-                .map(|x| format!("(uid={})", x))
+                .filter_map(|x| if !x.contains(' ') {
+                    Some(format!("(uid={x})"))
+                } else {
+                    None
+                })
                 .collect::<Vec<String>>()
                 .join("")
         )

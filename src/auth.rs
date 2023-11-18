@@ -9,6 +9,7 @@ use base64::{engine::general_purpose, Engine as _};
 use futures::{executor::block_on, future::LocalBoxFuture, lock::Mutex};
 use isahc::ReadResponseExt;
 use lazy_static::lazy_static;
+use log::{log, Level};
 use openssl::{
     bn::BigNum,
     hash::MessageDigest,
@@ -48,17 +49,17 @@ pub struct User {
     sub: String,
     typ: String,
     azp: String,
-    nonce: String,
-    session_state: String,
+    nonce: Option<String>,
+    session_state: Option<String>,
     scope: String,
-    sid: String,
+    sid: Option<String>,
     email_verified: bool,
-    pub name: String,
+    pub name: Option<String>,
     pub groups: Vec<String>,
     pub preferred_username: String,
-    pub given_name: String,
-    pub family_name: String,
-    pub email: String,
+    pub given_name: Option<String>,
+    pub family_name: Option<String>,
+    pub email: Option<String>,
 }
 
 impl FromRequest for User {
@@ -209,7 +210,13 @@ where
                 token_payload,
                 token_payload_base64,
                 token_signature,
-            ) = get_token_pieces(token).unwrap();
+            ) = match get_token_pieces(token) {
+                Ok(x) => x,
+                Err(e) => {
+                    log!(Level::Debug, "Token is formated incorrectly: {e}");
+                    return unauthorized(req);
+                }
+            };
 
             let verified = verify_token(
                 &token_header,

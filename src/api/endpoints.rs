@@ -542,7 +542,10 @@ pub async fn get_quotes(
     params: web::Query<FetchParams>,
     user: User,
 ) -> impl Responder {
-    let limit: i64 = params.limit.unwrap_or(10).into();
+    let limit: i64 = params
+        .limit
+        .map(|x| if x == -1 { i64::MAX } else { x })
+        .unwrap_or(10);
     let lt_qid: i32 = params.lt.unwrap_or(0);
     let query = params
         .q
