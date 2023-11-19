@@ -32,6 +32,7 @@ Queries a list of quotes. With no parameters it returns the most recent 10 quote
 * `speaker={username}` - Filters for quotes said by a certain user
 * `involved={username}` - Filters for submitter OR speaker
 * `hidden={bool}` - Filters for quotes that are hidden and visible to user (if admin, this means all hidden quotes. If normal user, this means their hidden quotes)
+* `favorited={bool}` - Filters for favorited quotes (default: false)
 
 #### Response
 ```json
@@ -53,7 +54,9 @@ Queries a list of quotes. With no parameters it returns the most recent 10 quote
         ],
         "id": 26,
         "vote": "upvote",
-        "score": 1
+        "score": 1,
+        "hidden": false,
+        "favorited": true
     }
 ]
 ```
@@ -82,7 +85,9 @@ Queries for a specific quote by id.
     ],
     "id": 26,
     "vote": "upvote",
-    "score": 1
+    "score": 1,
+    "hidden": false,
+    "favorited": true
 }
 ```
 
@@ -93,6 +98,26 @@ Deletes a quote by id. Must be the submitter in order to delete.
 ### PUT /api/quote/{qid}/hide
 
 Hides a quote by id
+
+### POST /api/quote/{qid}/vote
+
+Upvotes a quote
+
+#### Params
+
+* `vote` - Can be either `upvote` or `downvote` (Required)
+
+### DELETE /api/quote/{qid}/vote
+
+Unvotes/removes the vote for a quote
+
+### POST /api/quote/{qid}/favorite
+
+Favorites a quote
+
+### DELETE /api/quote/{qid}/favorite
+
+Unfavorites a quote
 
 ### POST /api/quote/{qid}/report
 
@@ -225,5 +250,15 @@ CREATE TABLE Votes (
     submitter VARCHAR(32) NOT NULL,
     timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (quote_id, submitter)
+);
+```
+
+### Favorites Table
+
+```SQL
+CREATE TABLE favorites (
+    quote_id INT4 REFERENCES quotes(id) ON DELETE CASCADE NOT NULL,
+    username VARCHAR(32) NOT NULL,
+    PRIMARY KEY (quote_id, username)
 );
 ```

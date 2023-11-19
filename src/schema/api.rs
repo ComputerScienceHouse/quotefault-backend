@@ -26,6 +26,7 @@ pub struct FetchParams {
     pub speaker: Option<String>,
     pub involved: Option<String>,
     pub hidden: Option<bool>,
+    pub favorited: Option<bool>,
 }
 
 #[derive(Serialize, Debug)]
@@ -37,6 +38,7 @@ pub struct QuoteResponse {
     pub vote: Option<Vote>,
     pub score: i64,
     pub hidden: bool,
+    pub favorited: bool,
 }
 
 #[derive(Serialize, Debug)]

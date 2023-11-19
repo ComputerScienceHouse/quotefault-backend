@@ -14,6 +14,7 @@ pub struct QuoteShard {
     pub vote: Option<Vote>,
     pub score: i64,
     pub hidden: bool,
+    pub favorited: bool,
 }
 
 #[derive(Serialize, Debug)]
