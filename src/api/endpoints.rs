@@ -391,11 +391,18 @@ pub async fn get_quote(state: Data<AppState>, path: Path<(i32,)>, user: User) ->
             pq.timestamp as \"timestamp!\", s.body as \"body!\", s.speaker as \"speaker!\",
             pq.hidden as \"hidden!\", v.vote as \"vote: Option<Vote>\",
             (CASE WHEN t.score IS NULL THEN 0 ELSE t.score END) AS \"score!\",
-            (CASE WHEN f.favorited IS NULL THEN FALSE ELSE f.favorited END) as \"favorited!\"
+            (CASE WHEN f.username IS NULL THEN FALSE ELSE TRUE END) AS \"favorited!\"
             FROM (
                 SELECT * FROM quotes q
                 WHERE q.id = $1
-                AND CASE WHEN $3 THEN true ELSE NOT q.hidden END
+                AND CASE
+                    WHEN $3 THEN TRUE
+                    ELSE hidden=(q.hidden AND
+                        (q.submitter=$2 OR $2 IN (
+                            SELECT speaker FROM shards
+                            WHERE quote_id=q.id)))
+                END
+                ORDER BY q.id DESC
             ) AS pq
             LEFT JOIN shards s ON s.quote_id = pq.id
             LEFT JOIN (
@@ -416,11 +423,10 @@ pub async fn get_quote(state: Data<AppState>, path: Path<(i32,)>, user: User) ->
                 GROUP BY quote_id
             ) t ON t.quote_id = pq.id
             LEFT JOIN (
-                SELECT
-                    quote_id,
-                    username=$2 as favorited
-                FROM favorites
-            ) f ON f.quote_id = pq.id",
+                SELECT quote_id, username FROM favorites
+                WHERE username=$2
+            ) f ON f.quote_id = pq.id
+            ORDER BY timestamp DESC, pq.id DESC, s.index",
             id,
             user.preferred_username,
             user.admin() || !*SECURITY_ENABLED,
@@ -572,7 +578,7 @@ pub async fn get_quotes(
             pq.timestamp as \"timestamp!\", s.body as \"body!\", s.speaker as \"speaker!\",
             pq.hidden as \"hidden!\", v.vote as \"vote: Option<Vote>\",
             (CASE WHEN t.score IS NULL THEN 0 ELSE t.score END) AS \"score!\",
-            (CASE WHEN f.favorited IS NULL THEN FALSE ELSE f.favorited END) as \"favorited!\"
+            (CASE WHEN f.username IS NULL THEN FALSE ELSE TRUE END) AS \"favorited!\"
             FROM (
                 SELECT * FROM quotes q
                 WHERE CASE
@@ -626,10 +632,8 @@ pub async fn get_quotes(
                 GROUP BY quote_id
             ) t ON t.quote_id = pq.id
             LEFT JOIN (
-                SELECT
-                    quote_id,
-                    username=$8 as favorited
-                FROM favorites
+                SELECT quote_id, username FROM favorites
+                WHERE username=$8
             ) f ON f.quote_id = pq.id
             ORDER BY timestamp DESC, pq.id DESC, s.index",
             limit, // $1
