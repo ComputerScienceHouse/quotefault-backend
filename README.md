@@ -54,7 +54,9 @@ Queries a list of quotes. With no parameters it returns the most recent 10 quote
         ],
         "id": 26,
         "vote": "upvote",
-        "score": 1
+        "score": 1,
+        "hidden": false,
+        "favorited": true
     }
 ]
 ```
@@ -83,7 +85,9 @@ Queries for a specific quote by id.
     ],
     "id": 26,
     "vote": "upvote",
-    "score": 1
+    "score": 1,
+    "hidden": false,
+    "favorited": true
 }
 ```
 
@@ -94,6 +98,26 @@ Deletes a quote by id. Must be the submitter in order to delete.
 ### PUT /api/quote/{qid}/hide
 
 Hides a quote by id
+
+### POST /api/quote/{qid}/vote
+
+Upvotes a quote
+
+#### Params
+
+* `vote` - Can be either `upvote` or `downvote` (Required)
+
+### DELETE /api/quote/{qid}/vote
+
+Unvotes/removes the vote for a quote
+
+### POST /api/quote/{qid}/favorite
+
+Favorites a quote
+
+### DELETE /api/quote/{qid}/favorite
+
+Unfavorites a quote
 
 ### POST /api/quote/{qid}/report
 
