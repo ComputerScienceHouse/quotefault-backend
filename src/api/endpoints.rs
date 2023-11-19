@@ -76,6 +76,7 @@ async fn shards_to_quotes(
                 vote: shard.vote.clone(),
                 submitter,
                 hidden: shard.hidden,
+                favorited: shard.favorited,
             });
         } else {
             quotes.last_mut().unwrap().shards.push(QuoteShardResponse {
@@ -389,7 +390,8 @@ pub async fn get_quote(state: Data<AppState>, path: Path<(i32,)>, user: User) ->
             "SELECT pq.id as \"id!\", s.index as \"index!\", pq.submitter as \"submitter!\",
             pq.timestamp as \"timestamp!\", s.body as \"body!\", s.speaker as \"speaker!\",
             pq.hidden as \"hidden!\", v.vote as \"vote: Option<Vote>\",
-            (CASE WHEN t.score IS NULL THEN 0 ELSE t.score END) AS \"score!\"
+            (CASE WHEN t.score IS NULL THEN 0 ELSE t.score END) AS \"score!\",
+            (CASE WHEN f.favorited IS NULL THEN FALSE ELSE f.favorited END) as \"favorited!\"
             FROM (
                 SELECT * FROM quotes q
                 WHERE q.id = $1
@@ -412,7 +414,13 @@ pub async fn get_quote(state: Data<AppState>, path: Path<(i32,)>, user: User) ->
                     ) AS score
                 FROM votes
                 GROUP BY quote_id
-            ) t ON t.quote_id = pq.id",
+            ) t ON t.quote_id = pq.id
+            LEFT JOIN (
+                SELECT
+                    quote_id,
+                    username=$2 as favorited
+                FROM favorites
+            ) f ON f.quote_id = pq.id",
             id,
             user.preferred_username,
             user.admin() || !*SECURITY_ENABLED,
@@ -556,13 +564,15 @@ pub async fn get_quotes(
     let involved = params.involved.clone().unwrap_or("%".to_string());
     let hidden = params.hidden.unwrap_or(false);
     let filter_by_hidden = params.hidden.is_some();
+    let favorited = params.favorited.unwrap_or(false);
     match log_query_as(
         query_as!(
             QuoteShard,
             "SELECT pq.id as \"id!\", s.index as \"index!\", pq.submitter as \"submitter!\",
             pq.timestamp as \"timestamp!\", s.body as \"body!\", s.speaker as \"speaker!\",
             pq.hidden as \"hidden!\", v.vote as \"vote: Option<Vote>\",
-            (CASE WHEN t.score IS NULL THEN 0 ELSE t.score END) AS \"score!\"
+            (CASE WHEN t.score IS NULL THEN 0 ELSE t.score END) AS \"score!\",
+            (CASE WHEN f.favorited IS NULL THEN FALSE ELSE f.favorited END) as \"favorited!\"
             FROM (
                 SELECT * FROM quotes q
                 WHERE CASE
@@ -583,10 +593,17 @@ pub async fn get_quotes(
                 AND submitter LIKE $5
                 AND (submitter LIKE $10 OR q.id IN (SELECT quote_id FROM shards s WHERE speaker LIKE $10))
                 AND q.id IN (
-                    SELECT quote_id FROM shards s
+                    SELECT quote_id FROM shards
                     WHERE body ILIKE $3
                     AND speaker LIKE $4
                 )
+                AND CASE
+                    WHEN $11 THEN q.id IN (
+                        SELECT quote_id FROM favorites
+                        WHERE username=$8
+                    )
+                    ELSE TRUE
+                END
                 ORDER BY q.id DESC
                 LIMIT $1
             ) AS pq
@@ -608,6 +625,12 @@ pub async fn get_quotes(
                 FROM votes
                 GROUP BY quote_id
             ) t ON t.quote_id = pq.id
+            LEFT JOIN (
+                SELECT
+                    quote_id,
+                    username=$8 as favorited
+                FROM favorites
+            ) f ON f.quote_id = pq.id
             ORDER BY timestamp DESC, pq.id DESC, s.index",
             limit, // $1
             lt_qid, // $2
@@ -619,6 +642,7 @@ pub async fn get_quotes(
             user.preferred_username, // $8
             user.admin() || !*SECURITY_ENABLED, // $9
             involved, // $10
+            favorited, // $11
         )
         .fetch_all(&state.db)
         .await,
@@ -723,6 +747,94 @@ pub async fn resolve_report(
             Ok(tx) => transaction = tx,
             Err(res) => return res,
         }
+    }
+
+    match transaction.commit().await {
+        Ok(_) => HttpResponse::Ok().body(""),
+        Err(e) => {
+            log!(Level::Error, "Transaction failed to commit");
+            HttpResponse::InternalServerError().body(e.to_string())
+        }
+    }
+}
+
+#[post("/quote/{id}/favorite", wrap = "CSHAuth::enabled()")]
+pub async fn favorite_quote(
+    state: Data<AppState>,
+    user: User,
+    path: Path<(i32,)>,
+) -> impl Responder {
+    let (id,) = path.into_inner();
+
+    let mut transaction = match open_transaction(&state.db).await {
+        Ok(t) => t,
+        Err(res) => return res,
+    };
+
+    match log_query(
+        query!(
+            "INSERT INTO favorites (quote_id, username)
+            VALUES ($1, $2)",
+            id,
+            user.preferred_username,
+        )
+        .execute(&mut *transaction)
+        .await,
+        Some(transaction),
+    )
+    .await
+    {
+        Ok((tx, result)) => {
+            transaction = tx.unwrap();
+            if result.rows_affected() == 0 {
+                return HttpResponse::BadRequest()
+                    .body("Quote is either already favorited or doesn't exist.");
+            }
+        }
+        Err(res) => return res,
+    }
+
+    match transaction.commit().await {
+        Ok(_) => HttpResponse::Ok().body(""),
+        Err(e) => {
+            log!(Level::Error, "Transaction failed to commit");
+            HttpResponse::InternalServerError().body(e.to_string())
+        }
+    }
+}
+
+#[delete("/quote/{id}/favorite", wrap = "CSHAuth::enabled()")]
+pub async fn unfavorite_quote(
+    state: Data<AppState>,
+    user: User,
+    path: Path<(i32,)>,
+) -> impl Responder {
+    let (id,) = path.into_inner();
+
+    let mut transaction = match open_transaction(&state.db).await {
+        Ok(t) => t,
+        Err(res) => return res,
+    };
+
+    match log_query(
+        query!(
+            "DELETE FROM favorites WHERE quote_id=$1 AND username=$2",
+            id,
+            user.preferred_username,
+        )
+        .execute(&mut *transaction)
+        .await,
+        Some(transaction),
+    )
+    .await
+    {
+        Ok((tx, result)) => {
+            transaction = tx.unwrap();
+            if result.rows_affected() == 0 {
+                return HttpResponse::BadRequest().body("Quote is not favorited.");
+            }
+        }
+        Err(res) => return res,
     }
 
     match transaction.commit().await {
