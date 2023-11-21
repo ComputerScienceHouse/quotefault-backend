@@ -3,14 +3,29 @@ use log::{log, Level};
 use sqlx::{postgres::PgQueryResult, Error, Pool, Postgres, Transaction};
 
 pub async fn open_transaction(db: &Pool<Postgres>) -> Result<Transaction<Postgres>, HttpResponse> {
+    match db.begin().await {
+        Ok(t) => Ok(t),
+        Err(e) => {
+            log!(Level::Error, "Failed to open transaction: {}", e);
+            Err(HttpResponse::InternalServerError().body(format!("Internal DB Error: {}", e)))
+        }
+    }
+}
+
+pub async fn try_open_transaction(
+    db: &Pool<Postgres>,
+) -> Result<Transaction<Postgres>, HttpResponse> {
     match db.try_begin().await {
         Ok(Some(t)) => Ok(t),
         Ok(None) => {
-            log!(Level::Error, "Failed to open transaction");
+            log!(
+                Level::Error,
+                "Failed to open transaction: Ok(None) transaction"
+            );
             Err(HttpResponse::InternalServerError().body("Internal DB Error: Ok(None) transaction"))
         }
         Err(e) => {
-            log!(Level::Error, "Failed to open transaction");
+            log!(Level::Error, "Failed to open transaction: {}", e);
             Err(HttpResponse::InternalServerError().body(format!("Internal DB Error: {}", e)))
         }
     }
