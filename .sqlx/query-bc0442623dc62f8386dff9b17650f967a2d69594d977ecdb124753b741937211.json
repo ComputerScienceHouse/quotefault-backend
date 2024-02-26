@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO reports (quote_id, reason, submitter_hash)\n            SELECT $1, $2, $3\n            WHERE $1 IN (\n                SELECT id FROM quotes\n                WHERE hidden IS NOT NULL\n            )\n            ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Text",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bc0442623dc62f8386dff9b17650f967a2d69594d977ecdb124753b741937211"
+}

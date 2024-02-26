@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM votes \n            WHERE quote_id=$1 AND submitter=$2\n            AND $1 IN (\n                SELECT id FROM quotes\n                WHERE CASE WHEN $3 THEN true ELSE hidden IS NOT NULL END\n            )",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0fe69affc2cedec57dce9418170b5d52faec42f770498cf1425cb8dfa423ae2f"
+}
