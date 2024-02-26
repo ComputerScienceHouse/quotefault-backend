@@ -53,6 +53,10 @@ pub async fn get_app_data() -> Data<AppState> {
         .connect(&env::var("DATABASE_URL").expect("DATABASE_URL not set"))
         .await
         .expect("Could not connect to database");
+    sqlx::migrate!("./migrations")
+        .run(&db)
+        .await
+        .expect("Failed to run migrations");
     println!("Successfully connected to database! :)");
     let ldap = LdapClient::new(
         env::var("QUOTEFAULT_LDAP_BIND_DN")
