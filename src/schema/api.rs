@@ -13,7 +13,7 @@ pub struct NewQuoteShard {
 }
 
 #[derive(Deserialize, Debug)]
-pub struct NewReport {
+pub struct Reason {
     pub reason: String,
 }
 
@@ -30,6 +30,12 @@ pub struct FetchParams {
 }
 
 #[derive(Serialize, Debug)]
+pub struct Hidden {
+    pub reason: String,
+    pub actor: UserResponse,
+}
+
+#[derive(Serialize, Debug)]
 pub struct QuoteResponse {
     pub submitter: UserResponse,
     pub timestamp: chrono::NaiveDateTime,
@@ -37,7 +43,7 @@ pub struct QuoteResponse {
     pub id: i32,
     pub vote: Option<Vote>,
     pub score: i64,
-    pub hidden: bool,
+    pub hidden: Option<Hidden>,
     pub favorited: bool,
 }
 
@@ -47,7 +53,7 @@ pub struct QuoteShardResponse {
     pub speaker: UserResponse,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Clone, Debug)]
 pub struct UserResponse {
     pub cn: String,
     pub uid: String,

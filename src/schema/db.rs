@@ -13,7 +13,8 @@ pub struct QuoteShard {
     pub timestamp: chrono::NaiveDateTime,
     pub vote: Option<Vote>,
     pub score: i64,
-    pub hidden: bool,
+    pub hidden_reason: Option<String>,
+    pub hidden_actor: Option<String>,
     pub favorited: bool,
 }
 
