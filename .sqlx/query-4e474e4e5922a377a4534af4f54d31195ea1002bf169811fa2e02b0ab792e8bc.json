@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO votes (quote_id, vote, submitter)\n            SELECT $1, $2, $3\n            WHERE $1 IN (\n                SELECT id FROM quotes\n                WHERE CASE WHEN $4 THEN true ELSE hidden IS NOT NULL END\n            )\n            ON CONFLICT (quote_id, submitter)\n            DO UPDATE SET vote=$2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        {
+          "Custom": {
+            "name": "vote",
+            "kind": {
+              "Enum": [
+                "upvote",
+                "downvote"
+              ]
+            }
+          }
+        },
+        "Varchar",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4e474e4e5922a377a4534af4f54d31195ea1002bf169811fa2e02b0ab792e8bc"
+}

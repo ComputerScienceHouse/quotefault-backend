@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE quotes SET hidden=$1 WHERE id=$1\n            AND ($3 OR id IN (\n                SELECT quote_id FROM shards s\n                WHERE s.speaker = $2\n            ))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8c32c927e9592903908a765e20722414fe87ca7f08fd79bbb93aa0a0bd6d8d0e"
+}
