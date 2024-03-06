@@ -38,8 +38,11 @@ async fn shards_to_quotes(
 ) -> Result<Vec<QuoteResponse>, HttpResponse> {
     let mut uid_map: HashMap<String, Option<String>> = HashMap::new();
     shards.iter().for_each(|x| {
-        let _ = uid_map.insert(x.submitter.clone(), None);
-        let _ = uid_map.insert(x.speaker.clone(), None);
+        uid_map.insert(x.submitter.clone(), None);
+        uid_map.insert(x.speaker.clone(), None);
+        if let Some(hidden_actor) = &x.hidden_actor {
+            uid_map.insert(hidden_actor.clone(), None);
+        }
     });
     match ldap::get_users(
         ldap,
