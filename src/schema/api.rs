@@ -1,23 +1,24 @@
 use crate::schema::db::Vote;
 use serde::{Deserialize, Serialize};
+use utoipa::{IntoParams, ToSchema};
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, ToSchema)]
 pub struct NewQuote {
     pub shards: Vec<NewQuoteShard>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, ToSchema)]
 pub struct NewQuoteShard {
     pub body: String,
     pub speaker: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, ToSchema)]
 pub struct Reason {
     pub reason: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, IntoParams)]
 pub struct FetchParams {
     pub q: Option<String>,
     pub lt: Option<i32>,
@@ -31,13 +32,13 @@ pub struct FetchParams {
     pub sort_direction: Option<bool>,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, ToSchema)]
 pub struct Hidden {
     pub reason: String,
     pub actor: UserResponse,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, ToSchema)]
 pub struct QuoteResponse {
     pub submitter: UserResponse,
     pub timestamp: chrono::NaiveDateTime,
@@ -49,13 +50,13 @@ pub struct QuoteResponse {
     pub favorited: bool,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, ToSchema)]
 pub struct QuoteShardResponse {
     pub body: String,
     pub speaker: UserResponse,
 }
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Clone, Debug, ToSchema)]
 pub struct UserResponse {
     pub cn: String,
     pub uid: String,
@@ -67,24 +68,24 @@ pub struct ReportedQuoteResponse {
     pub reports: Vec<ReportResponse>,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, ToSchema)]
 pub struct ReportResponse {
     pub reason: String,
     pub timestamp: chrono::NaiveDateTime,
     pub id: i32,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, IntoParams)]
 pub struct ResolveParams {
     pub hide: Option<bool>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, IntoParams)]
 pub struct VoteParams {
     pub vote: Vote,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, ToSchema)]
 pub struct VersionResponse {
     pub revision: String,
     pub date: String,

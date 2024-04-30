@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 pub struct ID {
     pub id: i32, // SERIAL value
 }
@@ -30,7 +31,7 @@ pub struct ReportedQuoteShard {
     pub report_resolver: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, PartialOrd, sqlx::Type, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, PartialOrd, sqlx::Type, Serialize, Deserialize, ToSchema)]
 #[sqlx(type_name = "vote", rename_all = "lowercase")]
 #[serde(rename_all = "lowercase")]
 pub enum Vote {
