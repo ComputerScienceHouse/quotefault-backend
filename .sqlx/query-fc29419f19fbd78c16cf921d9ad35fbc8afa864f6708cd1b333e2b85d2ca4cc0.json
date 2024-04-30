@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT pq.id AS \"quote_id!\", pq.submitter AS \"quote_submitter!\",\n            pq.timestamp AS \"quote_timestamp!\", pq.hidden IS NOT NULL AS \"quote_hidden!\", \n            r.timestamp AS \"report_timestamp!\", r.id AS \"report_id!\",\n            r.reason AS \"report_reason!\", r.resolver AS \"report_resolver\"\n            FROM (\n                SELECT * FROM quotes q\n                WHERE q.id IN (\n                    SELECT quote_id FROM reports r\n                    WHERE r.resolver IS NULL\n                )\n            ) AS pq\n            LEFT JOIN reports r ON r.quote_id = pq.id WHERE r.resolver IS NULL\n            ORDER BY pq.id, r.id",
+  "query": "SELECT pq.id AS \"quote_id!\", pq.submitter AS \"quote_submitter!\",\n            pq.timestamp AS \"quote_timestamp!\", pq.hidden AS \"quote_hidden!\", \n            r.timestamp AS \"report_timestamp!\", r.id AS \"report_id!\",\n            r.reason AS \"report_reason!\", r.resolver AS \"report_resolver\"\n            FROM (\n                SELECT * FROM (\n                    SELECT id, submitter, timestamp,\n                        (CASE WHEN quote_id IS NOT NULL THEN TRUE ELSE FALSE END) AS hidden\n                    FROM quotes as _q\n                    LEFT JOIN (SELECT quote_id FROM hidden) _h ON _q.id = _h.quote_id\n                ) as q\n                WHERE q.id IN (\n                    SELECT quote_id FROM reports r\n                    WHERE r.resolver IS NULL\n                )\n            ) AS pq\n            LEFT JOIN reports r ON r.quote_id = pq.id WHERE r.resolver IS NULL\n            ORDER BY pq.id, r.id",
   "describe": {
     "columns": [
       {
@@ -58,5 +58,5 @@
       true
     ]
   },
-  "hash": "d6539441c6780338f8f256637580a57b07e40cdc5bc5b25c353660db9c01826e"
+  "hash": "fc29419f19fbd78c16cf921d9ad35fbc8afa864f6708cd1b333e2b85d2ca4cc0"
 }

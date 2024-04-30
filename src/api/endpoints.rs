@@ -187,22 +187,16 @@ pub async fn hide_quote_by_id(
     reason: String,
     transaction: &mut Transaction<'_, Postgres>,
 ) -> Result<(), SqlxErrorOrResponse<'static>> {
-    query!(
-        "INSERT INTO public.hidden(quote_id, reason, actor) VALUES ($1, $2, $3)",
+    let result = query!(
+        "INSERT INTO public.hidden(quote_id, reason, actor)
+            SELECT $1, $2, $3::varchar
+            WHERE $1 IN (SELECT id FROM quotes)
+                AND ($4 OR $1 IN (
+                    SELECT quote_id FROM shards s
+                    WHERE s.speaker = $3
+                ))",
         id,
         reason,
-        user.preferred_username
-    )
-    .execute(&mut **transaction)
-    .await?;
-
-    let result = query!(
-        "UPDATE quotes SET hidden=$1 WHERE id=$1
-            AND ($3 OR id IN (
-                SELECT quote_id FROM shards s
-                WHERE s.speaker = $2
-            ))",
-        id,
         user.preferred_username,
         user.admin() || !*SECURITY_ENABLED,
     )
@@ -420,7 +414,7 @@ pub async fn report_quote(
             SELECT $1, $2, $3
             WHERE $1 IN (
                 SELECT id FROM quotes
-                WHERE hidden IS NOT NULL
+                WHERE id NOT IN (SELECT quote_id FROM hidden)
             )
             ON CONFLICT DO NOTHING",
             id,
@@ -472,13 +466,13 @@ pub async fn get_quote(state: Data<AppState>, path: Path<(i32,)>, user: User) ->
                 AND CASE
                     WHEN $3 THEN TRUE
                     ELSE (CASE
-                        WHEN q.hidden IS NOT NULL AND
+                        WHEN q.id IN (SELECT quote_id FROM hidden) AND
                         (q.submitter=$2 OR $2 IN (
                             SELECT speaker FROM shards
                             WHERE quote_id=q.id))
-                        THEN hidden IS NOT NULL
-                        ELSE hidden IS NULL END
-                    )
+                        THEN TRUE
+                        ELSE q.id NOT IN (SELECT quote_id FROM hidden)
+                    END)
                 END
                 ORDER BY q.id DESC
             ) AS pq
@@ -551,7 +545,7 @@ pub async fn vote_quote(
             SELECT $1, $2, $3
             WHERE $1 IN (
                 SELECT id FROM quotes
-                WHERE CASE WHEN $4 THEN true ELSE hidden IS NOT NULL END
+                WHERE CASE WHEN $4 THEN true ELSE id NOT IN (SELECT quote_id FROM hidden) END
             )
             ON CONFLICT (quote_id, submitter)
             DO UPDATE SET vote=$2",
@@ -599,7 +593,7 @@ pub async fn unvote_quote(state: Data<AppState>, path: Path<(i32,)>, user: User)
             WHERE quote_id=$1 AND submitter=$2
             AND $1 IN (
                 SELECT id FROM quotes
-                WHERE CASE WHEN $3 THEN true ELSE hidden IS NOT NULL END
+                WHERE CASE WHEN $3 THEN true ELSE id NOT IN (SELECT quote_id FROM hidden) END
             )",
             id,
             user.preferred_username,
@@ -660,20 +654,25 @@ pub async fn get_quotes(
             (CASE WHEN t.score IS NULL THEN 0 ELSE t.score END) AS \"score!\",
             (CASE WHEN f.username IS NULL THEN FALSE ELSE TRUE END) AS \"favorited!\"
             FROM (
-                SELECT * FROM quotes q
+                SELECT * FROM (
+                    SELECT id, submitter, timestamp,
+                        (CASE WHEN quote_id IS NOT NULL THEN TRUE ELSE FALSE END) AS hidden
+                    FROM quotes as _q
+                    LEFT JOIN (SELECT quote_id FROM hidden) _h ON _q.id = _h.quote_id
+                ) as q
                 WHERE CASE
-                    WHEN $7 AND $6 AND $9 THEN hidden IS NOT NULL
+                    WHEN $7 AND $6 AND $9 THEN q.hidden
                     WHEN $7 AND $6 THEN CASE
                         WHEN (q.submitter=$8 
                             OR $8 IN (SELECT speaker FROM shards WHERE quote_id=q.id))
-                            THEN hidden IS NOT NULL
+                            THEN q.hidden 
                         ELSE FALSE
                     END
-                    WHEN $7 AND NOT $6 THEN hidden IS NULL
-                    ELSE (CASE WHEN q.hidden IS NOT NULL AND
+                    WHEN $7 AND NOT $6 THEN NOT q.hidden
+                    ELSE (CASE WHEN q.hidden AND
                         (q.submitter=$8 OR $8 IN (
                             SELECT speaker FROM shards
-                            WHERE quote_id=q.id)) THEN q.hidden IS NOT NULL ELSE q.hidden IS NULL END)
+                            WHERE quote_id=q.id)) THEN q.hidden ELSE NOT q.hidden END)
                 END
                 AND CASE WHEN $2::int4 > 0 THEN q.id < $2::int4 ELSE true END
                 AND submitter LIKE $5
@@ -765,11 +764,16 @@ pub async fn get_reports(state: Data<AppState>) -> impl Responder {
         query_as!(
             ReportedQuoteShard,
             "SELECT pq.id AS \"quote_id!\", pq.submitter AS \"quote_submitter!\",
-            pq.timestamp AS \"quote_timestamp!\", pq.hidden IS NOT NULL AS \"quote_hidden!\", 
+            pq.timestamp AS \"quote_timestamp!\", pq.hidden AS \"quote_hidden!\", 
             r.timestamp AS \"report_timestamp!\", r.id AS \"report_id!\",
             r.reason AS \"report_reason!\", r.resolver AS \"report_resolver\"
             FROM (
-                SELECT * FROM quotes q
+                SELECT * FROM (
+                    SELECT id, submitter, timestamp,
+                        (CASE WHEN quote_id IS NOT NULL THEN TRUE ELSE FALSE END) AS hidden
+                    FROM quotes as _q
+                    LEFT JOIN (SELECT quote_id FROM hidden) _h ON _q.id = _h.quote_id
+                ) as q
                 WHERE q.id IN (
                     SELECT quote_id FROM reports r
                     WHERE r.resolver IS NULL
