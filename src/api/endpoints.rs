@@ -1,13 +1,17 @@
 use std::collections::{BTreeSet, HashMap};
+use std::fmt::{self, Display};
 
+use actix_web::body::MessageBody;
 use actix_web::{
-    delete, get, post, put,
+    delete, get,
+    http::StatusCode,
+    post, put,
     web::{self, Data, Json, Path},
-    HttpResponse, Responder,
+    HttpResponse, Responder, ResponseError,
 };
 use log::{log, Level};
 use sha3::{Digest, Sha3_256};
-use sqlx::{query, query_as, Postgres, Transaction};
+use sqlx::{query, query_as, Connection, Postgres, Transaction};
 
 use crate::{
     api::{
@@ -19,8 +23,9 @@ use crate::{
     ldap,
     schema::{
         api::{
-            FetchParams, NewQuote, NewReport, QuoteResponse, QuoteShardResponse, ReportResponse,
-            ReportedQuoteResponse, ResolveParams, UserResponse, VersionResponse, VoteParams,
+            FetchParams, Hidden, NewQuote, QuoteResponse, QuoteShardResponse, Reason,
+            ReportResponse, ReportedQuoteResponse, ResolveParams, UserResponse, VersionResponse,
+            VoteParams,
         },
         db::{QuoteShard, ReportedQuoteShard, Vote, ID},
     },
@@ -33,8 +38,11 @@ async fn shards_to_quotes(
 ) -> Result<Vec<QuoteResponse>, HttpResponse> {
     let mut uid_map: HashMap<String, Option<String>> = HashMap::new();
     shards.iter().for_each(|x| {
-        let _ = uid_map.insert(x.submitter.clone(), None);
-        let _ = uid_map.insert(x.speaker.clone(), None);
+        uid_map.insert(x.submitter.clone(), None);
+        uid_map.insert(x.speaker.clone(), None);
+        if let Some(hidden_actor) = &x.hidden_actor {
+            uid_map.insert(hidden_actor.clone(), None);
+        }
     });
     match ldap::get_users(
         ldap,
@@ -65,6 +73,16 @@ async fn shards_to_quotes(
                 },
                 None => continue,
             };
+            let hidden_actor = shard.hidden_actor.as_ref().and_then(|hidden_actor| {
+                uid_map
+                    .get(hidden_actor)
+                    .cloned()
+                    .unwrap()
+                    .map(|cn| UserResponse {
+                        uid: hidden_actor.clone(),
+                        cn,
+                    })
+            });
             quotes.push(QuoteResponse {
                 id: shard.id,
                 shards: vec![QuoteShardResponse {
@@ -75,7 +93,12 @@ async fn shards_to_quotes(
                 score: shard.score,
                 vote: shard.vote.clone(),
                 submitter,
-                hidden: shard.hidden,
+                hidden: hidden_actor.clone().and_then(|actor| {
+                    Some(Hidden {
+                        actor,
+                        reason: shard.hidden_reason.clone()?,
+                    })
+                }),
                 favorited: shard.favorited,
             });
         } else {
@@ -115,38 +138,78 @@ fn format_reports(quotes: &[ReportedQuoteShard]) -> Vec<ReportedQuoteResponse> {
     reported_quotes.into_values().collect()
 }
 
+impl ResponseError for SqlxErrorOrResponse<'_> {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            Self::SqlxError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::ResponseOwned(status_code, _) | Self::Response(status_code, _) => *status_code,
+        }
+    }
+    fn error_response(&self) -> HttpResponse {
+        match self {
+            Self::SqlxError(error) => {
+                HttpResponse::InternalServerError().body(format!("SQLX Error: {error}"))
+            }
+            Self::Response(status_code, body) => {
+                HttpResponse::with_body(*status_code, body.to_string().boxed())
+            }
+            Self::ResponseOwned(status_code, body) => {
+                HttpResponse::with_body(*status_code, body.clone().boxed())
+            }
+        }
+    }
+}
+
+impl Display for SqlxErrorOrResponse<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        match self {
+            Self::SqlxError(error) => write!(f, "{error}"),
+            Self::Response(status_code, error_message) => {
+                write!(f, "{status_code}: {error_message}")
+            }
+            Self::ResponseOwned(status_code, error_message) => {
+                write!(f, "{status_code}: {error_message}")
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum SqlxErrorOrResponse<'a> {
+    SqlxError(sqlx::Error),
+    Response(StatusCode, &'a str),
+    ResponseOwned(StatusCode, String),
+}
+
 pub async fn hide_quote_by_id(
     id: i32,
     user: User,
-    mut transaction: Transaction<'_, Postgres>,
-) -> Result<Transaction<'_, Postgres>, HttpResponse> {
-    match log_query(
-        query!(
-            "UPDATE quotes SET hidden=true WHERE id=$1
-            AND ($3 OR id IN (
-                SELECT quote_id FROM shards s
-                WHERE s.speaker = $2
-            ))",
-            id,
-            user.preferred_username,
-            user.admin() || !*SECURITY_ENABLED,
-        )
-        .execute(&mut *transaction)
-        .await,
-        Some(transaction),
+    reason: String,
+    transaction: &mut Transaction<'_, Postgres>,
+) -> Result<(), SqlxErrorOrResponse<'static>> {
+    let result = query!(
+        "INSERT INTO public.hidden(quote_id, reason, actor)
+            SELECT $1, $2, $3::varchar
+            WHERE $1 IN (SELECT id FROM quotes)
+                AND ($4 OR $1 IN (
+                    SELECT quote_id FROM shards s
+                    WHERE s.speaker = $3
+                ))",
+        id,
+        reason,
+        user.preferred_username,
+        user.admin() || !*SECURITY_ENABLED,
     )
-    .await
-    {
-        Ok((tx, result)) => {
-            if result.rows_affected() == 0 {
-                Err(HttpResponse::BadRequest()
-                    .body("Either you are not quoted in this quote or this quote does not exist."))
-            } else {
-                log!(Level::Trace, "hid quote");
-                Ok(tx.unwrap())
-            }
-        }
-        Err(res) => Err(res),
+    .execute(&mut **transaction)
+    .await?;
+    if result.rows_affected() == 0 {
+        Err(SqlxErrorOrResponse::Response(
+            StatusCode::BAD_REQUEST,
+            "Either you are not quoted in this quote or this quote does not exist.",
+        ))
+    } else {
+        log!(Level::Trace, "hid quote");
+        Ok(())
     }
 }
 
@@ -301,33 +364,37 @@ pub async fn delete_quote(state: Data<AppState>, path: Path<(i32,)>, user: User)
 }
 
 #[put("/quote/{id}/hide", wrap = "CSHAuth::enabled()")]
-pub async fn hide_quote(state: Data<AppState>, path: Path<(i32,)>, user: User) -> impl Responder {
+pub async fn hide_quote(
+    state: Data<AppState>,
+    path: Path<(i32,)>,
+    user: User,
+    Json(reason): Json<Reason>,
+) -> Result<HttpResponse, SqlxErrorOrResponse<'static>> {
     let (id,) = path.into_inner();
 
-    let mut transaction = match open_transaction(&state.db).await {
-        Ok(t) => t,
-        Err(res) => return res,
-    };
-
-    match hide_quote_by_id(id, user, transaction).await {
-        Ok(tx) => transaction = tx,
-        Err(res) => return res,
+    if reason.reason.len() < 10 {
+        return Err(SqlxErrorOrResponse::Response(
+            StatusCode::BAD_REQUEST,
+            "Reason must be at least 10 characters",
+        ));
     }
 
-    match transaction.commit().await {
-        Ok(_) => HttpResponse::Ok().body(""),
-        Err(e) => {
-            log!(Level::Error, "Transaction failed to commit");
-            HttpResponse::InternalServerError().body(e.to_string())
-        }
-    }
+    state
+        .db
+        .acquire()
+        .await?
+        .transaction(|transaction| {
+            Box::pin(async move { hide_quote_by_id(id, user, reason.reason, transaction).await })
+        })
+        .await?;
+    Ok(HttpResponse::Ok().body(""))
 }
 
 #[post("/quote/{id}/report", wrap = "CSHAuth::enabled()")]
 pub async fn report_quote(
     state: Data<AppState>,
     path: Path<(i32,)>,
-    body: Json<NewReport>,
+    body: Json<Reason>,
     user: User,
 ) -> impl Responder {
     let (id,) = path.into_inner();
@@ -347,7 +414,7 @@ pub async fn report_quote(
             SELECT $1, $2, $3
             WHERE $1 IN (
                 SELECT id FROM quotes
-                WHERE NOT hidden
+                WHERE id NOT IN (SELECT quote_id FROM hidden)
             )
             ON CONFLICT DO NOTHING",
             id,
@@ -389,7 +456,8 @@ pub async fn get_quote(state: Data<AppState>, path: Path<(i32,)>, user: User) ->
             QuoteShard,
             "SELECT pq.id as \"id!\", s.index as \"index!\", pq.submitter as \"submitter!\",
             pq.timestamp as \"timestamp!\", s.body as \"body!\", s.speaker as \"speaker!\",
-            pq.hidden as \"hidden!\", v.vote as \"vote: Option<Vote>\",
+            hidden.reason as \"hidden_reason: Option<String>\", hidden.actor as \"hidden_actor: Option<String>\", 
+            v.vote as \"vote: Option<Vote>\",
             (CASE WHEN t.score IS NULL THEN 0 ELSE t.score END) AS \"score!\",
             (CASE WHEN f.username IS NULL THEN FALSE ELSE TRUE END) AS \"favorited!\"
             FROM (
@@ -397,13 +465,18 @@ pub async fn get_quote(state: Data<AppState>, path: Path<(i32,)>, user: User) ->
                 WHERE q.id = $1
                 AND CASE
                     WHEN $3 THEN TRUE
-                    ELSE hidden=(q.hidden AND
+                    ELSE (CASE
+                        WHEN q.id IN (SELECT quote_id FROM hidden) AND
                         (q.submitter=$2 OR $2 IN (
                             SELECT speaker FROM shards
-                            WHERE quote_id=q.id)))
+                            WHERE quote_id=q.id))
+                        THEN TRUE
+                        ELSE q.id NOT IN (SELECT quote_id FROM hidden)
+                    END)
                 END
                 ORDER BY q.id DESC
             ) AS pq
+            LEFT JOIN hidden ON hidden.quote_id = pq.id
             LEFT JOIN shards s ON s.quote_id = pq.id
             LEFT JOIN (
                 SELECT quote_id, vote FROM votes
@@ -472,7 +545,7 @@ pub async fn vote_quote(
             SELECT $1, $2, $3
             WHERE $1 IN (
                 SELECT id FROM quotes
-                WHERE CASE WHEN $4 THEN true ELSE NOT hidden END
+                WHERE CASE WHEN $4 THEN true ELSE id NOT IN (SELECT quote_id FROM hidden) END
             )
             ON CONFLICT (quote_id, submitter)
             DO UPDATE SET vote=$2",
@@ -520,7 +593,7 @@ pub async fn unvote_quote(state: Data<AppState>, path: Path<(i32,)>, user: User)
             WHERE quote_id=$1 AND submitter=$2
             AND $1 IN (
                 SELECT id FROM quotes
-                WHERE CASE WHEN $3 THEN true ELSE NOT hidden END
+                WHERE CASE WHEN $3 THEN true ELSE id NOT IN (SELECT quote_id FROM hidden) END
             )",
             id,
             user.preferred_username,
@@ -576,24 +649,30 @@ pub async fn get_quotes(
             QuoteShard,
             "SELECT pq.id as \"id!\", s.index as \"index!\", pq.submitter as \"submitter!\",
             pq.timestamp as \"timestamp!\", s.body as \"body!\", s.speaker as \"speaker!\",
-            pq.hidden as \"hidden!\", v.vote as \"vote: Option<Vote>\",
+            hidden.reason as \"hidden_reason: Option<String>\",
+            hidden.actor as \"hidden_actor: Option<String>\", v.vote as \"vote: Option<Vote>\",
             (CASE WHEN t.score IS NULL THEN 0 ELSE t.score END) AS \"score!\",
             (CASE WHEN f.username IS NULL THEN FALSE ELSE TRUE END) AS \"favorited!\"
             FROM (
-                SELECT * FROM quotes q
+                SELECT * FROM (
+                    SELECT id, submitter, timestamp,
+                        (CASE WHEN quote_id IS NOT NULL THEN TRUE ELSE FALSE END) AS hidden
+                    FROM quotes as _q
+                    LEFT JOIN (SELECT quote_id FROM hidden) _h ON _q.id = _h.quote_id
+                ) as q
                 WHERE CASE
-                    WHEN $7 AND $6 AND $9 THEN hidden=TRUE
+                    WHEN $7 AND $6 AND $9 THEN q.hidden
                     WHEN $7 AND $6 THEN CASE
                         WHEN (q.submitter=$8 
                             OR $8 IN (SELECT speaker FROM shards WHERE quote_id=q.id))
-                            THEN hidden=TRUE
+                            THEN q.hidden 
                         ELSE FALSE
                     END
-                    WHEN $7 AND NOT $6 THEN hidden=FALSE
-                    ELSE hidden=(q.hidden AND
+                    WHEN $7 AND NOT $6 THEN NOT q.hidden
+                    ELSE (CASE WHEN q.hidden AND
                         (q.submitter=$8 OR $8 IN (
                             SELECT speaker FROM shards
-                            WHERE quote_id=q.id)))
+                            WHERE quote_id=q.id)) THEN q.hidden ELSE NOT q.hidden END)
                 END
                 AND CASE WHEN $2::int4 > 0 THEN q.id < $2::int4 ELSE true END
                 AND submitter LIKE $5
@@ -613,6 +692,7 @@ pub async fn get_quotes(
                 ORDER BY q.id DESC
                 LIMIT $1
             ) AS pq
+            LEFT JOIN hidden ON hidden.quote_id = pq.id
             LEFT JOIN shards s ON s.quote_id = pq.id
             LEFT JOIN (
                 SELECT quote_id, vote FROM votes
@@ -688,7 +768,12 @@ pub async fn get_reports(state: Data<AppState>) -> impl Responder {
             r.timestamp AS \"report_timestamp!\", r.id AS \"report_id!\",
             r.reason AS \"report_reason!\", r.resolver AS \"report_resolver\"
             FROM (
-                SELECT * FROM quotes q
+                SELECT * FROM (
+                    SELECT id, submitter, timestamp,
+                        (CASE WHEN quote_id IS NOT NULL THEN TRUE ELSE FALSE END) AS hidden
+                    FROM quotes as _q
+                    LEFT JOIN (SELECT quote_id FROM hidden) _h ON _q.id = _h.quote_id
+                ) as q
                 WHERE q.id IN (
                     SELECT quote_id FROM reports r
                     WHERE r.resolver IS NULL
@@ -708,58 +793,49 @@ pub async fn get_reports(state: Data<AppState>) -> impl Responder {
     }
 }
 
+impl From<sqlx::Error> for SqlxErrorOrResponse<'_> {
+    fn from(error: sqlx::Error) -> Self {
+        Self::SqlxError(error)
+    }
+}
+
 #[put("/quote/{id}/resolve", wrap = "CSHAuth::admin_only()")]
 pub async fn resolve_report(
     state: Data<AppState>,
     path: Path<(i32,)>,
     user: User,
     params: web::Query<ResolveParams>,
-) -> impl Responder {
+) -> Result<HttpResponse, SqlxErrorOrResponse<'static>> {
     let (id,) = path.into_inner();
 
-    let mut transaction = match open_transaction(&state.db).await {
-        Ok(t) => t,
-        Err(res) => return res,
-    };
+    state.db.acquire().await?.transaction(|transaction| Box::pin(async move {
 
-    match log_query(
-        query!(
-            "UPDATE reports SET resolver=$1 WHERE quote_id=$2 AND resolver IS NULL",
+        let result = match query!(
+            "UPDATE reports SET resolver=$1 WHERE quote_id=$2 AND resolver IS NULL RETURNING reason",
             user.preferred_username,
             id,
         )
-        .execute(&mut *transaction)
-        .await,
-        Some(transaction),
-    )
-    .await
-    {
-        Ok((tx, result)) => {
-            transaction = tx.unwrap();
-            if result.rows_affected() == 0 {
-                return HttpResponse::BadRequest()
-                    .body("Report is either already resolved or doesn't exist.");
-            }
-        }
-        Err(res) => return res,
-    }
+            .fetch_one(&mut **transaction)
+            .await {
+                Ok(result) => result,
+                Err(sqlx::Error::RowNotFound) =>
+                {
+                    return Err(SqlxErrorOrResponse::Response(StatusCode::BAD_REQUEST, "Report is either already resolved or doesn't exist."));
+                },
+                Err(err) => return Err(err.into()),
+            };
 
-    log!(Level::Trace, "resolved all quote's reports");
+        log!(Level::Trace, "resolved all quote's reports");
 
-    if let Some(true) = params.hide {
-        match hide_quote_by_id(id, user, transaction).await {
-            Ok(tx) => transaction = tx,
-            Err(res) => return res,
+        if let Some(true) = params.hide {
+            hide_quote_by_id(id, user, result.reason, &mut *transaction).await?;
         }
-    }
 
-    match transaction.commit().await {
-        Ok(_) => HttpResponse::Ok().body(""),
-        Err(e) => {
-            log!(Level::Error, "Transaction failed to commit");
-            HttpResponse::InternalServerError().body(e.to_string())
-        }
-    }
+        Ok(())
+
+    })).await?;
+
+    Ok(HttpResponse::Ok().body(""))
 }
 
 #[post("/quote/{id}/favorite", wrap = "CSHAuth::enabled()")]

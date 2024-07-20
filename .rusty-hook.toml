@@ -1,0 +1,5 @@
+[hooks]
+pre-commit = "cargo sqlx prepare --check"
+
+[logging]
+verbose = true

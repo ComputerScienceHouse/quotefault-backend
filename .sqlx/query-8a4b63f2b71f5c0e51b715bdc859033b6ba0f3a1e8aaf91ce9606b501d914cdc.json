@@ -1,0 +1,94 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT pq.id as \"id!\", s.index as \"index!\", pq.submitter as \"submitter!\",\n            pq.timestamp as \"timestamp!\", s.body as \"body!\", s.speaker as \"speaker!\",\n            hidden.reason as \"hidden_reason: Option<String>\", hidden.actor as \"hidden_actor: Option<String>\", \n            v.vote as \"vote: Option<Vote>\",\n            (CASE WHEN t.score IS NULL THEN 0 ELSE t.score END) AS \"score!\",\n            (CASE WHEN f.username IS NULL THEN FALSE ELSE TRUE END) AS \"favorited!\"\n            FROM (\n                SELECT * FROM quotes q\n                WHERE q.id = $1\n                AND CASE\n                    WHEN $3 THEN TRUE\n                    ELSE (CASE\n                        WHEN q.id IN (SELECT quote_id FROM hidden) AND\n                        (q.submitter=$2 OR $2 IN (\n                            SELECT speaker FROM shards\n                            WHERE quote_id=q.id))\n                        THEN TRUE\n                        ELSE q.id NOT IN (SELECT quote_id FROM hidden)\n                    END)\n                END\n                ORDER BY q.id DESC\n            ) AS pq\n            LEFT JOIN hidden ON hidden.quote_id = pq.id\n            LEFT JOIN shards s ON s.quote_id = pq.id\n            LEFT JOIN (\n                SELECT quote_id, vote FROM votes\n                WHERE submitter=$2\n            ) v ON v.quote_id = pq.id\n            LEFT JOIN (\n                SELECT\n                    quote_id,\n                    SUM(\n                        CASE\n                            WHEN vote='upvote' THEN 1 \n                            WHEN vote='downvote' THEN -1\n                            ELSE 0\n                        END\n                    ) AS score\n                FROM votes\n                GROUP BY quote_id\n            ) t ON t.quote_id = pq.id\n            LEFT JOIN (\n                SELECT quote_id, username FROM favorites\n                WHERE username=$2\n            ) f ON f.quote_id = pq.id\n            ORDER BY timestamp DESC, pq.id DESC, s.index",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "index!",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 2,
+        "name": "submitter!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "timestamp!",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 4,
+        "name": "body!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "speaker!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "hidden_reason: Option<String>",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "hidden_actor: Option<String>",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "vote: Option<Vote>",
+        "type_info": {
+          "Custom": {
+            "name": "vote",
+            "kind": {
+              "Enum": [
+                "upvote",
+                "downvote"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "score!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 10,
+        "name": "favorited!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "8a4b63f2b71f5c0e51b715bdc859033b6ba0f3a1e8aaf91ce9606b501d914cdc"
+}
