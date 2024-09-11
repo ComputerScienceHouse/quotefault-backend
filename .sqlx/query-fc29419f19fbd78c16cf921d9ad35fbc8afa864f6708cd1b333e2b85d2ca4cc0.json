@@ -1,0 +1,62 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT pq.id AS \"quote_id!\", pq.submitter AS \"quote_submitter!\",\n            pq.timestamp AS \"quote_timestamp!\", pq.hidden AS \"quote_hidden!\", \n            r.timestamp AS \"report_timestamp!\", r.id AS \"report_id!\",\n            r.reason AS \"report_reason!\", r.resolver AS \"report_resolver\"\n            FROM (\n                SELECT * FROM (\n                    SELECT id, submitter, timestamp,\n                        (CASE WHEN quote_id IS NOT NULL THEN TRUE ELSE FALSE END) AS hidden\n                    FROM quotes as _q\n                    LEFT JOIN (SELECT quote_id FROM hidden) _h ON _q.id = _h.quote_id\n                ) as q\n                WHERE q.id IN (\n                    SELECT quote_id FROM reports r\n                    WHERE r.resolver IS NULL\n                )\n            ) AS pq\n            LEFT JOIN reports r ON r.quote_id = pq.id WHERE r.resolver IS NULL\n            ORDER BY pq.id, r.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "quote_id!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "quote_submitter!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "quote_timestamp!",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 3,
+        "name": "quote_hidden!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "report_timestamp!",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 5,
+        "name": "report_id!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "report_reason!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "report_resolver",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "fc29419f19fbd78c16cf921d9ad35fbc8afa864f6708cd1b333e2b85d2ca4cc0"
+}

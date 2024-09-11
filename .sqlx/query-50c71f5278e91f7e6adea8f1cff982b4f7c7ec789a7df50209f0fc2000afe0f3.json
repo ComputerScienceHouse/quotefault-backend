@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO public.hidden(quote_id, reason, actor)\n            SELECT $1, $2, $3::varchar\n            WHERE $1 IN (SELECT id FROM quotes)\n                AND ($4 OR $1 IN (\n                    SELECT quote_id FROM shards s\n                    WHERE s.speaker = $3\n                ))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Text",
+        "Varchar",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "50c71f5278e91f7e6adea8f1cff982b4f7c7ec789a7df50209f0fc2000afe0f3"
+}
