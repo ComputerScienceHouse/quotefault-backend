@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap};
 use std::fmt::{self, Display};
 
 use actix_web::body::MessageBody;
@@ -20,7 +20,7 @@ use crate::{
     },
     app::AppState,
     auth::{CSHAuth, User, SECURITY_ENABLED},
-    ldap::{self, get_quotable_members},
+    ldap,
     schema::{
         api::{
             FetchParams, Hidden, NewQuote, QuoteResponse, QuoteShardResponse, Reason,
@@ -227,14 +227,7 @@ pub async fn create_quote(
     if body.shards.len() > 6 {
         return HttpResponse::BadRequest().body("Maximum of 6 shards exceeded.");
     }
-    let Ok(valid_speakers) = get_quotable_members(&state.ldap).await else {
-        return HttpResponse::InternalServerError().body("Failed to fetch quotable members");
-    };
-    let valid_speakers = valid_speakers.map(|user| user.uid).collect::<HashSet<_>>();
     for shard in &body.shards {
-        if !valid_speakers.contains(&shard.speaker) {
-            return HttpResponse::BadRequest().body("One or more speakers is unquotable");
-        }
         if !is_valid_username(shard.speaker.as_str()) {
             return HttpResponse::BadRequest().body("Invalid speaker username format specified.");
         }
@@ -751,9 +744,10 @@ pub async fn get_quotes(
 
 #[get("/users", wrap = "CSHAuth::enabled()")]
 pub async fn get_users(state: Data<AppState>) -> impl Responder {
-    match ldap::get_quotable_members(&state.ldap).await {
+    match ldap::get_group_members(&state.ldap, "member").await {
         Ok(users) => HttpResponse::Ok().json(
             users
+                .into_iter()
                 .map(|x| UserResponse {
                     uid: x.uid,
                     cn: x.cn,
