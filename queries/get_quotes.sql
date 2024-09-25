@@ -110,4 +110,4 @@ left join
 left join
     (select quote_id, username from favorites where username = $8) f
     on f.quote_id = pq.id
-order by timestamp desc, pq.id desc, s.index
+order by s.index
