@@ -123,4 +123,5 @@ order by
             then -1 * extract(epoch from timestamp)
         end
     ),
+    pq.id,
     s.index
