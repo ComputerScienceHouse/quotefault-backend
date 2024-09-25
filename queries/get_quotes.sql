@@ -110,4 +110,17 @@ left join
 left join
     (select quote_id, username from favorites where username = $8) f
     on f.quote_id = pq.id
-order by s.index
+order by
+    (
+        case
+            when $12::bool and $13::bool
+            then score
+            when $12::bool and not $13::bool
+            then -1 * score
+            when not $12::bool and $13::bool
+            then extract(epoch from timestamp)
+            when not $12::bool and not $13::bool
+            then -1 * extract(epoch from timestamp)
+        end
+    ),
+    s.index
