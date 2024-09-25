@@ -11,7 +11,7 @@ use actix_web::{
 };
 use log::{log, Level};
 use sha3::{Digest, Sha3_256};
-use sqlx::{query, query_as, Connection, Postgres, Transaction};
+use sqlx::{query, query_as, query_file_as, Connection, Postgres, Transaction};
 
 use crate::{
     api::{
@@ -644,89 +644,25 @@ pub async fn get_quotes(
     let hidden = params.hidden.unwrap_or(false);
     let filter_by_hidden = params.hidden.is_some();
     let favorited = params.favorited.unwrap_or(false);
+    let sort = params.sort.as_ref().is_some_and(|s| s == "votes");
+    let sort_direction = params.sort_direction.is_some_and(|d| d);
     match log_query_as(
-        query_as!(
+        query_file_as!(
             QuoteShard,
-            "SELECT pq.id as \"id!\", s.index as \"index!\", pq.submitter as \"submitter!\",
-            pq.timestamp as \"timestamp!\", s.body as \"body!\", s.speaker as \"speaker!\",
-            hidden.reason as \"hidden_reason: Option<String>\",
-            hidden.actor as \"hidden_actor: Option<String>\", v.vote as \"vote: Option<Vote>\",
-            (CASE WHEN t.score IS NULL THEN 0 ELSE t.score END) AS \"score!\",
-            (CASE WHEN f.username IS NULL THEN FALSE ELSE TRUE END) AS \"favorited!\"
-            FROM (
-                SELECT * FROM (
-                    SELECT id, submitter, timestamp,
-                        (CASE WHEN quote_id IS NOT NULL THEN TRUE ELSE FALSE END) AS hidden
-                    FROM quotes as _q
-                    LEFT JOIN (SELECT quote_id FROM hidden) _h ON _q.id = _h.quote_id
-                ) as q
-                WHERE CASE
-                    WHEN $7 AND $6 AND $9 THEN q.hidden
-                    WHEN $7 AND $6 THEN CASE
-                        WHEN (q.submitter=$8 
-                            OR $8 IN (SELECT speaker FROM shards WHERE quote_id=q.id))
-                            THEN q.hidden 
-                        ELSE FALSE
-                    END
-                    WHEN $7 AND NOT $6 THEN NOT q.hidden
-                    ELSE (CASE WHEN q.hidden AND
-                        (q.submitter=$8 OR $8 IN (
-                            SELECT speaker FROM shards
-                            WHERE quote_id=q.id)) THEN q.hidden ELSE NOT q.hidden END)
-                END
-                AND CASE WHEN $2::int4 > 0 THEN q.id < $2::int4 ELSE true END
-                AND submitter LIKE $5
-                AND (submitter LIKE $10 OR q.id IN (SELECT quote_id FROM shards s WHERE speaker LIKE $10))
-                AND q.id IN (
-                    SELECT quote_id FROM shards
-                    WHERE body ILIKE $3
-                    AND speaker LIKE $4
-                )
-                AND CASE
-                    WHEN $11 THEN q.id IN (
-                        SELECT quote_id FROM favorites
-                        WHERE username=$8
-                    )
-                    ELSE TRUE
-                END
-                ORDER BY q.id DESC
-                LIMIT $1
-            ) AS pq
-            LEFT JOIN hidden ON hidden.quote_id = pq.id
-            LEFT JOIN shards s ON s.quote_id = pq.id
-            LEFT JOIN (
-                SELECT quote_id, vote FROM votes
-                WHERE submitter=$8
-            ) v ON v.quote_id = pq.id
-            LEFT JOIN (
-                SELECT
-                    quote_id,
-                    SUM(
-                        CASE
-                            WHEN vote='upvote' THEN 1 
-                            WHEN vote='downvote' THEN -1
-                            ELSE 0
-                        END
-                    ) AS score
-                FROM votes
-                GROUP BY quote_id
-            ) t ON t.quote_id = pq.id
-            LEFT JOIN (
-                SELECT quote_id, username FROM favorites
-                WHERE username=$8
-            ) f ON f.quote_id = pq.id
-            ORDER BY timestamp DESC, pq.id DESC, s.index",
-            limit, // $1
-            lt_qid, // $2
-            query, // $3
-            speaker, // $4
-            submitter, // $5
-            hidden, // $6
-            filter_by_hidden, // $7
-            user.preferred_username, // $8
+            "queries/get_quotes.sql",
+            limit,                              // $1
+            lt_qid,                             // $2
+            query,                              // $3
+            speaker,                            // $4
+            submitter,                          // $5
+            hidden,                             // $6
+            filter_by_hidden,                   // $7
+            user.preferred_username,            // $8
             user.admin() || !*SECURITY_ENABLED, // $9
-            involved, // $10
-            favorited, // $11
+            involved,                           // $10
+            favorited,                          // $11
+            sort,                               // $12
+            sort_direction,                     // $13
         )
         .fetch_all(&state.db)
         .await,

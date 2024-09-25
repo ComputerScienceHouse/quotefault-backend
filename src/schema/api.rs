@@ -27,6 +27,8 @@ pub struct FetchParams {
     pub involved: Option<String>,
     pub hidden: Option<bool>,
     pub favorited: Option<bool>,
+    pub sort: Option<String>,
+    pub sort_direction: Option<bool>,
 }
 
 #[derive(Serialize, Debug)]
