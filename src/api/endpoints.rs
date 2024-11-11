@@ -213,6 +213,18 @@ pub async fn hide_quote_by_id(
     }
 }
 
+/// Creates a quote
+#[utoipa::path(
+    post,
+    path = "/api/quote",
+    request_body=NewQuote,
+    responses(
+        (status = OK, description = "Quote created successfully"),
+        (status = BAD_REQUEST, description = "Malformed request"),
+        (status = UNAUTHORIZED, description = "Not authenticated"),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal Server Error")
+    ),
+)]
 #[post("/quote", wrap = "CSHAuth::enabled()")]
 pub async fn create_quote(
     state: Data<AppState>,
@@ -321,6 +333,20 @@ pub async fn create_quote(
     }
 }
 
+/// Deletes a quote
+#[utoipa::path(
+    delete,
+    path = "/api/quote/{id}",
+    params(
+        ("id" = i32, Path, description = "ID of quote to delete")
+    ),
+    responses(
+        (status = OK, description = "Quote deleted successfully"),
+        (status = BAD_REQUEST, description = "Either requester does not own the quote or the quote does not exist"),
+        (status = UNAUTHORIZED, description = "Not authenticated"),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal Server Error")
+    ),
+)]
 #[delete("/quote/{id}", wrap = "CSHAuth::enabled()")]
 pub async fn delete_quote(state: Data<AppState>, path: Path<(i32,)>, user: User) -> impl Responder {
     let (id,) = path.into_inner();
@@ -363,6 +389,21 @@ pub async fn delete_quote(state: Data<AppState>, path: Path<(i32,)>, user: User)
     }
 }
 
+/// Hides a quote
+#[utoipa::path(
+    put,
+    path = "/api/quote/{id}/hide",
+    params(
+        ("id" = i32, Path, description = "ID of quote to hide"),
+    ),
+    request_body = Reason,
+    responses(
+        (status = OK, description = "Quote hidden successfully"),
+        (status = BAD_REQUEST, description = "Either requester was not quoted or the quote does not exist"),
+        (status = UNAUTHORIZED, description = "Not authenticated"),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal Server Error")
+    ),
+)]
 #[put("/quote/{id}/hide", wrap = "CSHAuth::enabled()")]
 pub async fn hide_quote(
     state: Data<AppState>,
@@ -372,24 +413,37 @@ pub async fn hide_quote(
 ) -> Result<HttpResponse, SqlxErrorOrResponse<'static>> {
     let (id,) = path.into_inner();
 
-    if reason.reason.len() < 10 {
-        return Err(SqlxErrorOrResponse::Response(
-            StatusCode::BAD_REQUEST,
-            "Reason must be at least 10 characters",
-        ));
-    }
+    let reason = if reason.reason.is_empty() {
+        "No reason given".to_string()
+    } else {
+        reason.reason
+    };
 
     state
         .db
         .acquire()
         .await?
         .transaction(|transaction| {
-            Box::pin(async move { hide_quote_by_id(id, user, reason.reason, transaction).await })
+            Box::pin(async move { hide_quote_by_id(id, user, reason, transaction).await })
         })
         .await?;
     Ok(HttpResponse::Ok().body(""))
 }
 
+/// Reports a quote
+#[utoipa::path(
+    post,
+    path = "/api/quote/{id}/report",
+    params(
+        ("id" = i32, Path, description = "ID of quote to report")
+    ),
+    responses(
+        (status = OK, description = "Quote reported successfully"),
+        (status = BAD_REQUEST, description = "Quote already reported by the same user or the quote doesn't exist"),
+        (status = UNAUTHORIZED, description = "Not authenticated"),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal Server Error")
+    ),
+)]
 #[post("/quote/{id}/report", wrap = "CSHAuth::enabled()")]
 pub async fn report_quote(
     state: Data<AppState>,
@@ -447,6 +501,20 @@ pub async fn report_quote(
     }
 }
 
+/// Gets a quote by ID
+#[utoipa::path(
+    get,
+    path = "/api/quote/{id}",
+    params(
+        ("id" = i32, Path, description = "ID of quote")
+    ),
+    responses(
+        (status = OK, description = "Quote reported successfully", body = QuoteResponse),
+        (status = NOT_FOUND, description = "Quote not found"),
+        (status = UNAUTHORIZED, description = "Not authenticated"),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal Server Error")
+    ),
+)]
 #[get("/quote/{id}", wrap = "CSHAuth::enabled()")]
 pub async fn get_quote(state: Data<AppState>, path: Path<(i32,)>, user: User) -> impl Responder {
     let (id,) = path.into_inner();
@@ -524,6 +592,21 @@ pub async fn get_quote(state: Data<AppState>, path: Path<(i32,)>, user: User) ->
     }
 }
 
+/// Adds a vote (upvote or downvote) to a quote
+#[utoipa::path(
+    post,
+    path = "/api/quote/{id}/vote",
+    params(
+        ("id" = i32, Path, description = "ID of quote to vote on"),
+        VoteParams
+    ),
+    responses(
+        (status = OK, description = "Quote voted on successfully"),
+        (status = NOT_FOUND, description = "Quote not found"),
+        (status = UNAUTHORIZED, description = "Not authenticated"),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal Server Error")
+    ),
+)]
 #[post("/quote/{id}/vote", wrap = "CSHAuth::enabled()")]
 pub async fn vote_quote(
     state: Data<AppState>,
@@ -563,7 +646,7 @@ pub async fn vote_quote(
         Ok((tx, result)) => {
             transaction = tx.unwrap();
             if result.rows_affected() == 0 {
-                return HttpResponse::BadRequest().body("Quote does not exist");
+                return HttpResponse::NotFound().body("Quote does not exist");
             }
         }
         Err(res) => return res,
@@ -578,6 +661,20 @@ pub async fn vote_quote(
     }
 }
 
+/// Removes a vote from a quote
+#[utoipa::path(
+    delete,
+    path = "/api/quote/{id}/vote",
+    params(
+        ("id" = i32, Path, description = "ID of quote to unvote")
+    ),
+    responses(
+        (status = OK, description = "Removed vote from quote successfully"),
+        (status = NOT_FOUND, description = "Quote not found"),
+        (status = UNAUTHORIZED, description = "Not authenticated"),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal Server Error")
+    ),
+)]
 #[delete("/quote/{id}/vote", wrap = "CSHAuth::enabled()")]
 pub async fn unvote_quote(state: Data<AppState>, path: Path<(i32,)>, user: User) -> impl Responder {
     let (id,) = path.into_inner();
@@ -608,7 +705,7 @@ pub async fn unvote_quote(state: Data<AppState>, path: Path<(i32,)>, user: User)
         Ok((tx, result)) => {
             transaction = tx.unwrap();
             if result.rows_affected() == 0 {
-                return HttpResponse::BadRequest().body("Quote does not exist");
+                return HttpResponse::NotFound().body("Quote does not exist");
             }
         }
         Err(res) => return res,
@@ -623,6 +720,17 @@ pub async fn unvote_quote(state: Data<AppState>, path: Path<(i32,)>, user: User)
     }
 }
 
+/// Gets the list of users from LDAP
+#[utoipa::path(
+    get,
+    path = "/api/quotes",
+    params(FetchParams),
+    responses(
+        (status = OK, description = "Successfully searched quotes", body = Vec<QuoteResponse>),
+        (status = UNAUTHORIZED, description = "Not authenticated"),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal Server Error")
+    ),
+)]
 #[get("/quotes", wrap = "CSHAuth::enabled()")]
 pub async fn get_quotes(
     state: Data<AppState>,
@@ -678,6 +786,16 @@ pub async fn get_quotes(
     }
 }
 
+/// Gets the list of users
+#[utoipa::path(
+    get,
+    path = "/api/users",
+    responses(
+        (status = OK, description = "Successfully fetched all users", body = Vec<QuoteResponse>),
+        (status = UNAUTHORIZED, description = "Not authenticated"),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal Server Error")
+    ),
+)]
 #[get("/users", wrap = "CSHAuth::enabled()")]
 pub async fn get_users(state: Data<AppState>) -> impl Responder {
     match ldap::get_group_members(&state.ldap, "member").await {
@@ -694,6 +812,16 @@ pub async fn get_users(state: Data<AppState>) -> impl Responder {
     }
 }
 
+/// Gets the list of reports
+#[utoipa::path(
+    get,
+    path = "/api/reports",
+    responses(
+        (status = OK, description = "Successfully fetched reports", body = Vec<ReportResponse>),
+        (status = UNAUTHORIZED, description = "Not an admin"),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal Server Error")
+    ),
+)]
 #[get("/reports", wrap = "CSHAuth::admin_only()")]
 pub async fn get_reports(state: Data<AppState>) -> impl Responder {
     match log_query_as(
@@ -735,6 +863,21 @@ impl From<sqlx::Error> for SqlxErrorOrResponse<'_> {
     }
 }
 
+/// Resolves a report
+#[utoipa::path(
+    put,
+    path = "/api/quote/{id}/resolve",
+    params(
+        ("id" = i32, Path, description = "ID of report to resolve"),
+        ResolveParams
+    ),
+    responses(
+        (status = OK, description = "Successfully resolved a report"),
+        (status = BAD_REQUEST, description = "Report is either already resolved or doesn't exist"),
+        (status = UNAUTHORIZED, description = "Not an admin"),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal Server Error")
+    ),
+)]
 #[put("/quote/{id}/resolve", wrap = "CSHAuth::admin_only()")]
 pub async fn resolve_report(
     state: Data<AppState>,
@@ -774,6 +917,20 @@ pub async fn resolve_report(
     Ok(HttpResponse::Ok().body(""))
 }
 
+/// Favorites a quote
+#[utoipa::path(
+    post,
+    path = "/api/quote/{id}/favorite",
+    params(
+        ("id" = i32, Path, description = "ID of quote to favorite")
+    ),
+    responses(
+        (status = OK, description = "Successfully favorited quote"),
+        (status = BAD_REQUEST, description = "Quote is either already favorited or doesn't exist"),
+        (status = UNAUTHORIZED, description = "Not authenticated"),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal Server Error")
+    ),
+)]
 #[post("/quote/{id}/favorite", wrap = "CSHAuth::enabled()")]
 pub async fn favorite_quote(
     state: Data<AppState>,
@@ -819,6 +976,20 @@ pub async fn favorite_quote(
     }
 }
 
+/// Unfavorites a quote
+#[utoipa::path(
+    delete,
+    path = "/api/quote/{id}/favorite",
+    params(
+        ("id" = i32, Path, description = "ID of quote to unfavorite")
+    ),
+    responses(
+        (status = OK, description = "Successfully unfavorited quote"),
+        (status = BAD_REQUEST, description = "Quote is either not favorited or doesn't exist"),
+        (status = UNAUTHORIZED, description = "Not authenticated"),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal Server Error")
+    ),
+)]
 #[delete("/quote/{id}/favorite", wrap = "CSHAuth::enabled()")]
 pub async fn unfavorite_quote(
     state: Data<AppState>,
@@ -862,6 +1033,14 @@ pub async fn unfavorite_quote(
     }
 }
 
+/// Get the current version of the backend
+#[utoipa::path(
+    get,
+    path = "/api/version",
+    responses(
+        (status = OK, description = "Version information", body = VersionResponse),
+    ),
+)]
 #[get("/version", wrap = "CSHAuth::enabled()")]
 pub async fn get_version() -> impl Responder {
     HttpResponse::Ok().json(VersionResponse {
