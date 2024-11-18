@@ -317,7 +317,7 @@ pub async fn create_quote(
                 if let Err(err) = send_ping(
                     shard.speaker.clone(),
                     format!(
-                        "You were quoted by {}. Check it out at Quotefault!",
+                        "You were quoted by @{}. Check it out at Quotefault!",
                         user.preferred_username
                     ),
                 ) {
