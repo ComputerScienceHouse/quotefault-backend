@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update kevlar set enabled = not enabled where uid = $1 and last_modified + '24 hours' < now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6ea9c4f31dc79f1cfa7db7ab691a109f56a79c41f8eb34df1b21b27e110e99e6"
+}

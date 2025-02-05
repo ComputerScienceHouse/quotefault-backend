@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "select uid from kevlar where enabled",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "uid",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "c1abf944eabc019f2b92e63785c3d09b0f73bb6bb4d7f519bf2ce55f7255b92b"
+}

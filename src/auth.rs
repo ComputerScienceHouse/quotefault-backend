@@ -1,4 +1,4 @@
-use crate::app::AppState;
+use crate::{api::endpoints::get_kevlar_users, app::AppState};
 use actix_web::{
     dev::{Service, ServiceRequest, ServiceResponse, Transform},
     web::Data,
@@ -19,7 +19,7 @@ use openssl::{
 };
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     env,
     future::{ready, Ready},
     sync::Arc,
@@ -199,6 +199,12 @@ where
                 Box::pin(async { Ok(req.into_response(HttpResponse::Unauthorized().finish())) })
             };
 
+            let internal_error = |req: ServiceRequest| -> Self::Future {
+                Box::pin(async {
+                    Ok(req.into_response(HttpResponse::InternalServerError().finish()))
+                })
+            };
+
             let token = match req.headers().get("Authorization").map(|x| x.to_str()) {
                 Some(Ok(x)) => x.trim_start_matches("Bearer ").to_string(),
                 _ => return unauthorized(req),
@@ -229,6 +235,16 @@ where
             if verified {
                 req.extensions_mut().insert(token_payload.clone());
             } else {
+                return unauthorized(req);
+            }
+
+            let kevlar_users = match futures::executor::block_on(get_kevlar_users(&_app_data.db)) {
+                Ok(users) => users,
+                Err(_) => return internal_error(req),
+            }
+            .collect::<HashSet<_>>();
+
+            if kevlar_users.contains(&token_payload.preferred_username) {
                 return unauthorized(req);
             }
 
