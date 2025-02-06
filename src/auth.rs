@@ -238,13 +238,20 @@ where
                 return unauthorized(req);
             }
 
+            log!(Level::Debug, "Getting Kevlar users...");
             let kevlar_users = match futures::executor::block_on(get_kevlar_users(&_app_data.db)) {
                 Ok(users) => users,
                 Err(_) => return internal_error(req),
             }
             .collect::<HashSet<_>>();
+            log!(Level::Debug, "Got Kevlar users {kevlar_users:?}");
 
             if kevlar_users.contains(&token_payload.preferred_username) {
+                log!(
+                    Level::Debug,
+                    "Unauthorized due to Kevlar: {}",
+                    token_payload.preferred_username
+                );
                 return unauthorized(req);
             }
 
