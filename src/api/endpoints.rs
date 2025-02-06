@@ -1077,13 +1077,13 @@ pub async fn get_version() -> impl Responder {
 }
 
 #[utoipa::path(
-    get,
+    put,
     path = "/api/kevlar",
     responses(
         (status = OK, description = "Kevlar updated"),
     )
 )]
-#[get("/kevlar", wrap = "CSHAuth::disabled()")]
+#[put("/kevlar", wrap = "CSHAuth::disabled()")]
 pub async fn toggle_kevlar(state: Data<AppState>, user: User) -> impl Responder {
     query!(
         "insert into kevlar(uid) values($1) on conflict do nothing",
