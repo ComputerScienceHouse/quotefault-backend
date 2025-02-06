@@ -1094,3 +1094,25 @@ pub async fn toggle_kevlar(state: Data<AppState>, user: User) -> impl Responder 
         _ => HttpResponse::NoContent().finish(),
     }
 }
+
+#[utoipa::path(
+    get,
+    path = "/api/kevlar",
+    responses(
+        (status = OK, description = "Kevlar status"),
+    )
+)]
+#[get("/kevlar", wrap = "CSHAuth::disabled()")]
+pub async fn get_kevlar(state: Data<AppState>, user: User) -> impl Responder {
+    let Ok(result) = query!(
+        "select count(*) from kevlar where uid = $1 and enabled",
+        user.preferred_username
+    )
+    .fetch_one(&state.db)
+    .await
+    else {
+        return HttpResponse::InternalServerError().body("Failed to get kevlar status");
+    };
+
+    HttpResponse::Ok().json(result.count.is_some_and(|x| x > 0))
+}
