@@ -41,7 +41,9 @@ pub fn configure_app(cfg: &mut web::ServiceConfig) {
             resolve_report,
             unfavorite_quote,
             unvote_quote,
-            vote_quote
+            vote_quote,
+            toggle_kevlar,
+            get_kevlar
         ),
         modifiers(&SecurityAddon),
         tags(
@@ -86,7 +88,9 @@ pub fn configure_app(cfg: &mut web::ServiceConfig) {
                 .service(unvote_quote)
                 .service(get_version)
                 .service(favorite_quote)
-                .service(unfavorite_quote),
+                .service(unfavorite_quote)
+                .service(toggle_kevlar)
+                .service(get_kevlar),
         );
 }
 

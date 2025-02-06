@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::{self, Display};
 
 use actix_web::body::MessageBody;
@@ -11,7 +11,7 @@ use actix_web::{
 };
 use log::{log, Level};
 use sha3::{Digest, Sha3_256};
-use sqlx::{query, query_as, query_file_as, Connection, Postgres, Transaction};
+use sqlx::{query, query_as, query_file_as, Connection, Pool, Postgres, Transaction};
 
 use crate::{
     api::{
@@ -31,6 +31,17 @@ use crate::{
     },
     utils::is_valid_username,
 };
+
+pub(crate) async fn get_kevlar_users(
+    db: &Pool<Postgres>,
+) -> Result<impl Iterator<Item = String>, sqlx::error::Error> {
+    let users = query!("select uid from kevlar where enabled")
+        .fetch_all(db)
+        .await?
+        .into_iter()
+        .map(|x| x.uid);
+    Ok(users)
+}
 
 async fn shards_to_quotes(
     shards: &[QuoteShard],
@@ -252,6 +263,14 @@ pub async fn create_quote(
             .body("Invalid submitter username specified. SHOULD NEVER HAPPEN!");
     }
     let mut users: Vec<String> = body.shards.iter().map(|x| x.speaker.clone()).collect();
+    let kevlar_users = match get_kevlar_users(&state.db).await {
+        Ok(users) => users,
+        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+    }
+    .collect::<HashSet<_>>();
+    if users.iter().any(|user| kevlar_users.contains(user)) {
+        return HttpResponse::BadRequest().body("One or more speakers cannot be quoted");
+    }
     users.push(user.preferred_username.clone());
     match ldap::users_exist(&state.ldap, BTreeSet::from_iter(users.into_iter())).await {
         Ok(exists) => {
@@ -583,7 +602,7 @@ pub async fn get_quote(state: Data<AppState>, path: Path<(i32,)>, user: User) ->
                 HttpResponse::NotFound().body("Quote could not be found")
             } else {
                 match shards_to_quotes(shards.as_slice(), &state.ldap).await {
-                    Ok(quotes) => HttpResponse::Ok().json(quotes.get(0).unwrap()),
+                    Ok(quotes) => HttpResponse::Ok().json(quotes.first().unwrap()),
                     Err(res) => res,
                 }
             }
@@ -798,10 +817,16 @@ pub async fn get_quotes(
 )]
 #[get("/users", wrap = "CSHAuth::enabled()")]
 pub async fn get_users(state: Data<AppState>) -> impl Responder {
+    let kevlar_users = match get_kevlar_users(&state.db).await {
+        Ok(users) => users,
+        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+    }
+    .collect::<HashSet<_>>();
     match ldap::get_group_members(&state.ldap, "member").await {
         Ok(users) => HttpResponse::Ok().json(
             users
                 .into_iter()
+                .filter(|user| !kevlar_users.contains(&user.uid))
                 .map(|x| UserResponse {
                     uid: x.uid,
                     cn: x.cn,
@@ -1049,4 +1074,45 @@ pub async fn get_version() -> impl Responder {
         revision: env!("VERGEN_GIT_SHA").to_string(),
         url: env!("REPO_URL").to_string(),
     })
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/kevlar",
+    responses(
+        (status = OK, description = "Kevlar updated"),
+    )
+)]
+#[put("/kevlar", wrap = "CSHAuth::disabled()")]
+pub async fn toggle_kevlar(state: Data<AppState>, user: User) -> impl Responder {
+    let result = match query!("insert into kevlar(uid, enabled) values($1, true) on conflict on constraint pkey do update set enabled = not kevlar.enabled where kevlar.uid = $1 and kevlar.last_modified + '24 hours' < now()", user.preferred_username).execute(&state.db).await {
+        Ok(r) => r,
+        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+    };
+    match result.rows_affected() {
+        0 => HttpResponse::BadRequest().body("Kevlar has been toggled too recently"),
+        _ => HttpResponse::NoContent().finish(),
+    }
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/kevlar",
+    responses(
+        (status = OK, description = "Kevlar status"),
+    )
+)]
+#[get("/kevlar", wrap = "CSHAuth::disabled()")]
+pub async fn get_kevlar(state: Data<AppState>, user: User) -> impl Responder {
+    let Ok(result) = query!(
+        "select count(*) from kevlar where uid = $1 and enabled",
+        user.preferred_username
+    )
+    .fetch_one(&state.db)
+    .await
+    else {
+        return HttpResponse::InternalServerError().body("Failed to get kevlar status");
+    };
+
+    HttpResponse::Ok().json(result.count.is_some_and(|x| x > 0))
 }
