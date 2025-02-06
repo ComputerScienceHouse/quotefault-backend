@@ -602,7 +602,7 @@ pub async fn get_quote(state: Data<AppState>, path: Path<(i32,)>, user: User) ->
                 HttpResponse::NotFound().body("Quote could not be found")
             } else {
                 match shards_to_quotes(shards.as_slice(), &state.ldap).await {
-                    Ok(quotes) => HttpResponse::Ok().json(quotes.get(0).unwrap()),
+                    Ok(quotes) => HttpResponse::Ok().json(quotes.first().unwrap()),
                     Err(res) => res,
                 }
             }
@@ -1085,14 +1085,7 @@ pub async fn get_version() -> impl Responder {
 )]
 #[put("/kevlar", wrap = "CSHAuth::disabled()")]
 pub async fn toggle_kevlar(state: Data<AppState>, user: User) -> impl Responder {
-    query!(
-        "insert into kevlar(uid) values($1) on conflict do nothing",
-        user.preferred_username
-    )
-    .execute(&state.db)
-    .await
-    .unwrap();
-    let result = match query!("update kevlar set enabled = not enabled where uid = $1 and last_modified + '24 hours' < now()", user.preferred_username).execute(&state.db).await {
+    let result = match query!("insert into kevlar(uid, enabled) values($1, true) on conflict on constraint pkey do update set enabled = not kevlar.enabled where kevlar.uid = $1 and kevlar.last_modified + '24 hours' < now()", user.preferred_username).execute(&state.db).await {
         Ok(r) => r,
         Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
     };
