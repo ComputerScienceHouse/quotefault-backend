@@ -46,21 +46,19 @@ async fn get_kevlar_users_inner(db: &Pool<Postgres>) -> Result<HashSet<String>, 
 }
 
 pub async fn get_kevlar_users(db: &Pool<Postgres>) -> Result<HashSet<String>, sqlx::Error> {
-    if let Some(users) = KEVLAR_USERS.read().unwrap().as_ref() {
-        return Ok(users.clone());
+    if KEVLAR_USERS.read().unwrap().is_none() {
+        *KEVLAR_USERS.write().unwrap() = Some(get_kevlar_users_inner(db).await?);
     }
 
-    get_kevlar_users_inner(db).await
+    Ok(KEVLAR_USERS.read().unwrap().clone().unwrap())
 }
 
 pub async fn user_has_kevlar(db: &Pool<Postgres>, uid: &str) -> Result<bool, sqlx::Error> {
-    if let Some(users) = KEVLAR_USERS.read().unwrap().as_ref() {
-        return Ok(users.contains(uid));
+    if KEVLAR_USERS.read().unwrap().is_none() {
+        *KEVLAR_USERS.write().unwrap() = Some(get_kevlar_users_inner(db).await?);
     }
 
-    get_kevlar_users_inner(db)
-        .await
-        .map(|set| set.contains(uid))
+    Ok(KEVLAR_USERS.read().unwrap().as_ref().unwrap().contains(uid))
 }
 
 pub async fn any_user_has_kevlar<T>(db: &Pool<Postgres>, uid: &[T]) -> Result<bool, sqlx::Error>
@@ -68,13 +66,15 @@ where
     String: Borrow<T>,
     T: Eq + Hash,
 {
-    if let Some(users) = KEVLAR_USERS.read().unwrap().as_ref() {
-        return Ok(uid.iter().any(|u| users.contains(u)));
+    if KEVLAR_USERS.read().unwrap().is_none() {
+        *KEVLAR_USERS.write().unwrap() = Some(get_kevlar_users_inner(db).await?);
     }
 
-    get_kevlar_users_inner(db)
-        .await
-        .map(|users| uid.iter().any(|u| users.contains(u)))
+    if let Some(users) = KEVLAR_USERS.read().unwrap().as_ref() {
+        Ok(uid.iter().any(|u| users.contains(u)))
+    } else {
+        unreachable!()
+    }
 }
 
 pub fn toggle_kevlar_cache(uid: &str) {
