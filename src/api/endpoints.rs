@@ -1081,6 +1081,7 @@ pub async fn toggle_kevlar(state: Data<AppState>, user: User) -> impl Responder 
         0 => HttpResponse::BadRequest().body("Kevlar has been toggled too recently"),
         _ => {
             toggle_kevlar_cache(&user.preferred_username);
+            log!(Level::Info, "{:?}", get_kevlar_users(&state.db).await);
             HttpResponse::NoContent().finish()
         }
     }
