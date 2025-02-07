@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap};
 use std::fmt::{self, Display};
 
 use actix_web::body::MessageBody;
@@ -11,8 +11,9 @@ use actix_web::{
 };
 use log::{log, Level};
 use sha3::{Digest, Sha3_256};
-use sqlx::{query, query_as, query_file_as, Connection, Pool, Postgres, Transaction};
+use sqlx::{query, query_as, query_file_as, Connection, Postgres, Transaction};
 
+use crate::auth::{any_user_has_kevlar, clear_kevlar_cache, get_kevlar_users, toggle_kevlar_cache};
 use crate::{
     api::{
         db::{log_query, log_query_as, open_transaction},
@@ -31,17 +32,6 @@ use crate::{
     },
     utils::is_valid_username,
 };
-
-pub(crate) async fn get_kevlar_users(
-    db: &Pool<Postgres>,
-) -> Result<impl Iterator<Item = String>, sqlx::error::Error> {
-    let users = query!("select uid from kevlar where enabled")
-        .fetch_all(db)
-        .await?
-        .into_iter()
-        .map(|x| x.uid);
-    Ok(users)
-}
 
 async fn shards_to_quotes(
     shards: &[QuoteShard],
@@ -263,12 +253,11 @@ pub async fn create_quote(
             .body("Invalid submitter username specified. SHOULD NEVER HAPPEN!");
     }
     let mut users: Vec<String> = body.shards.iter().map(|x| x.speaker.clone()).collect();
-    let kevlar_users = match get_kevlar_users(&state.db).await {
-        Ok(users) => users,
+    let kevlar = match any_user_has_kevlar(&state.db, users.as_slice()).await {
+        Ok(b) => b,
         Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
-    }
-    .collect::<HashSet<_>>();
-    if users.iter().any(|user| kevlar_users.contains(user)) {
+    };
+    if kevlar {
         return HttpResponse::BadRequest().body("One or more speakers cannot be quoted");
     }
     users.push(user.preferred_username.clone());
@@ -820,13 +809,12 @@ pub async fn get_users(state: Data<AppState>) -> impl Responder {
     let kevlar_users = match get_kevlar_users(&state.db).await {
         Ok(users) => users,
         Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
-    }
-    .collect::<HashSet<_>>();
+    };
     match ldap::get_group_members(&state.ldap, "member").await {
         Ok(users) => HttpResponse::Ok().json(
             users
                 .into_iter()
-                .filter(|user| !kevlar_users.contains(&user.uid))
+                .filter(|user| kevlar_users.contains(&user.uid))
                 .map(|x| UserResponse {
                     uid: x.uid,
                     cn: x.cn,
@@ -1085,13 +1073,16 @@ pub async fn get_version() -> impl Responder {
 )]
 #[put("/kevlar", wrap = "CSHAuth::disabled()")]
 pub async fn toggle_kevlar(state: Data<AppState>, user: User) -> impl Responder {
-    let result = match query!("insert into kevlar(uid, enabled) values($1, true) on conflict on constraint pkey do update set enabled = not kevlar.enabled where kevlar.uid = $1 and kevlar.last_modified + '24 hours' < now()", user.preferred_username).execute(&state.db).await {
+    let result = match query!("insert into kevlar(uid, enabled) values($1, true) on conflict on constraint pkey do update set enabled = not kevlar.enabled, last_modified = now() where kevlar.uid = $1 and kevlar.last_modified + '24 hours' < now()", user.preferred_username).execute(&state.db).await {
         Ok(r) => r,
         Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
     };
     match result.rows_affected() {
         0 => HttpResponse::BadRequest().body("Kevlar has been toggled too recently"),
-        _ => HttpResponse::NoContent().finish(),
+        _ => {
+            toggle_kevlar_cache(&user.preferred_username);
+            HttpResponse::NoContent().finish()
+        }
     }
 }
 
@@ -1115,4 +1106,17 @@ pub async fn get_kevlar(state: Data<AppState>, user: User) -> impl Responder {
     };
 
     HttpResponse::Ok().json(result.count.is_some_and(|x| x > 0))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/kevlar",
+    responses(
+        (status = OK, description = "Cache cleared"),
+    )
+)]
+#[delete("/kevlar", wrap = "CSHAuth::disabled()")]
+pub async fn delete_kevlar_cache() -> impl Responder {
+    clear_kevlar_cache();
+    HttpResponse::NoContent().finish()
 }

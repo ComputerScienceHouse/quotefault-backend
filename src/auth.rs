@@ -1,4 +1,4 @@
-use crate::{api::endpoints::get_kevlar_users, app::AppState};
+use crate::app::AppState;
 use actix_web::{
     dev::{Service, ServiceRequest, ServiceResponse, Transform},
     web::Data,
@@ -18,17 +18,75 @@ use openssl::{
     sign::Verifier,
 };
 use serde::{Deserialize, Serialize};
+use sqlx::{query, Pool, Postgres};
 use std::{
+    borrow::Borrow,
     collections::{HashMap, HashSet},
     env,
     future::{ready, Ready},
-    sync::Arc,
+    hash::Hash,
+    sync::{Arc, RwLock},
     task::{Context, Poll},
 };
 
 lazy_static! {
     static ref JWT_CACHE: Arc<Mutex<HashMap<String, PKey<Public>>>> =
         Arc::new(Mutex::new(HashMap::new()));
+}
+
+static KEVLAR_USERS: RwLock<Option<HashSet<String>>> = RwLock::new(None);
+
+async fn get_kevlar_users_inner(db: &Pool<Postgres>) -> Result<HashSet<String>, sqlx::Error> {
+    Ok(query!("select uid from kevlar where enabled")
+        .fetch_all(db)
+        .await?
+        .into_iter()
+        .map(|x| x.uid)
+        .collect())
+}
+
+pub async fn get_kevlar_users(db: &Pool<Postgres>) -> Result<HashSet<String>, sqlx::Error> {
+    if let Some(users) = KEVLAR_USERS.read().unwrap().as_ref() {
+        return Ok(users.clone());
+    }
+
+    get_kevlar_users_inner(db).await
+}
+
+pub async fn user_has_kevlar(db: &Pool<Postgres>, uid: &str) -> Result<bool, sqlx::Error> {
+    if let Some(users) = KEVLAR_USERS.read().unwrap().as_ref() {
+        return Ok(users.contains(uid));
+    }
+
+    get_kevlar_users_inner(db)
+        .await
+        .map(|set| set.contains(uid))
+}
+
+pub async fn any_user_has_kevlar<T>(db: &Pool<Postgres>, uid: &[T]) -> Result<bool, sqlx::Error>
+where
+    String: Borrow<T>,
+    T: Eq + Hash,
+{
+    if let Some(users) = KEVLAR_USERS.read().unwrap().as_ref() {
+        return Ok(uid.iter().any(|u| users.contains(u)));
+    }
+
+    get_kevlar_users_inner(db)
+        .await
+        .map(|users| uid.iter().any(|u| users.contains(u)))
+}
+
+pub fn toggle_kevlar_cache(uid: &str) {
+    if let Some(users) = KEVLAR_USERS.write().unwrap().as_mut() {
+        if !users.remove(uid) {
+            users.insert(uid.to_string());
+        }
+    }
+}
+
+pub(crate) fn clear_kevlar_cache() {
+    *KEVLAR_USERS.write().unwrap() = None;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -238,13 +296,10 @@ where
                 return unauthorized(req);
             }
 
-            log!(Level::Debug, "Getting Kevlar users...");
             let kevlar_users = match futures::executor::block_on(get_kevlar_users(&_app_data.db)) {
                 Ok(users) => users,
                 Err(_) => return internal_error(req),
-            }
-            .collect::<HashSet<_>>();
-            log!(Level::Debug, "Got Kevlar users {kevlar_users:?}");
+            };
 
             if kevlar_users.contains(&token_payload.preferred_username) {
                 log!(

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "insert into kevlar(uid, enabled) values($1, true) on conflict on constraint pkey do update set enabled = not kevlar.enabled, last_modified = now() where kevlar.uid = $1 and kevlar.last_modified + '24 hours' < now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b16d92962a6a3df75c24a2b7669eba56dfd46be1b406b5a114b948d471e2daa9"
+}
