@@ -77,12 +77,17 @@ where
     }
 }
 
-pub fn toggle_kevlar_cache(uid: &str) {
-    if let Some(users) = KEVLAR_USERS.write().unwrap().as_mut() {
-        if !users.remove(uid) {
-            users.insert(uid.to_string());
-        }
+pub async fn edit_kevlar_cache(
+    db: &Pool<Postgres>,
+    mut f: impl FnMut(&mut HashSet<String>),
+) -> Result<(), sqlx::Error> {
+    if KEVLAR_USERS.read().unwrap().is_none() {
+        *KEVLAR_USERS.write().unwrap() = Some(get_kevlar_users_inner(db).await?);
     }
+
+    f(KEVLAR_USERS.write().unwrap().as_mut().unwrap());
+
+    Ok(())
 }
 
 pub(crate) fn clear_kevlar_cache() {

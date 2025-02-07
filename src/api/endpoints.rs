@@ -13,7 +13,7 @@ use log::{log, Level};
 use sha3::{Digest, Sha3_256};
 use sqlx::{query, query_as, query_file_as, Connection, Postgres, Transaction};
 
-use crate::auth::{any_user_has_kevlar, clear_kevlar_cache, get_kevlar_users, toggle_kevlar_cache};
+use crate::auth::{any_user_has_kevlar, clear_kevlar_cache, edit_kevlar_cache, get_kevlar_users};
 use crate::{
     api::{
         db::{log_query, log_query_as, open_transaction},
@@ -1073,15 +1073,21 @@ pub async fn get_version() -> impl Responder {
 )]
 #[put("/kevlar", wrap = "CSHAuth::disabled()")]
 pub async fn toggle_kevlar(state: Data<AppState>, user: User) -> impl Responder {
-    let result = match query!("insert into kevlar(uid, enabled) values($1, true) on conflict on constraint pkey do update set enabled = not kevlar.enabled, last_modified = now() where kevlar.uid = $1 and kevlar.last_modified + '24 hours' < now()", user.preferred_username).execute(&state.db).await {
+    let result = match query!("insert into kevlar(uid, enabled) values($1, true) on conflict on constraint pkey do update set enabled = not kevlar.enabled, last_modified = now() where kevlar.uid = $1 and kevlar.last_modified + '24 hours' < now() returning enabled", user.preferred_username).fetch_optional(&state.db).await {
         Ok(r) => r,
         Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
     };
-    match result.rows_affected() {
-        0 => HttpResponse::BadRequest().body("Kevlar has been toggled too recently"),
-        _ => {
-            toggle_kevlar_cache(&user.preferred_username);
-            log!(Level::Info, "{:?}", get_kevlar_users(&state.db).await);
+    match result {
+        None => HttpResponse::BadRequest().body("Kevlar has been toggled too recently"),
+        Some(record) => {
+            let _ = edit_kevlar_cache(&state.db, |cache| {
+                if record.enabled {
+                    cache.insert(user.preferred_username.clone());
+                } else {
+                    cache.remove(&user.preferred_username);
+                }
+            })
+            .await;
             HttpResponse::NoContent().finish()
         }
     }
