@@ -814,7 +814,7 @@ pub async fn get_users(state: Data<AppState>) -> impl Responder {
         Ok(users) => HttpResponse::Ok().json(
             users
                 .into_iter()
-                .filter(|user| kevlar_users.contains(&user.uid))
+                .filter(|user| !kevlar_users.contains(&user.uid))
                 .map(|x| UserResponse {
                     uid: x.uid,
                     cn: x.cn,
