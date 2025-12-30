@@ -2,7 +2,9 @@ use actix_web::HttpResponse;
 use log::{log, Level};
 use sqlx::{postgres::PgQueryResult, Error, Pool, Postgres, Transaction};
 
-pub async fn open_transaction(db: &Pool<Postgres>) -> Result<Transaction<Postgres>, HttpResponse> {
+pub async fn open_transaction(
+    db: &'_ Pool<Postgres>,
+) -> Result<Transaction<'_, Postgres>, HttpResponse> {
     match db.begin().await {
         Ok(t) => Ok(t),
         Err(e) => {
@@ -13,8 +15,8 @@ pub async fn open_transaction(db: &Pool<Postgres>) -> Result<Transaction<Postgre
 }
 
 pub async fn try_open_transaction(
-    db: &Pool<Postgres>,
-) -> Result<Transaction<Postgres>, HttpResponse> {
+    db: &'_ Pool<Postgres>,
+) -> Result<Transaction<'_, Postgres>, HttpResponse> {
     match db.try_begin().await {
         Ok(Some(t)) => Ok(t),
         Ok(None) => {

@@ -421,18 +421,19 @@ pub async fn hide_quote(
 ) -> Result<HttpResponse, SqlxErrorOrResponse<'static>> {
     let (id,) = path.into_inner();
 
-    let reason = if reason.reason.is_empty() {
-        "No reason given".to_string()
-    } else {
-        reason.reason
-    };
+    if reason.reason.len() < 10 {
+        return Err(SqlxErrorOrResponse::Response(
+            StatusCode::BAD_REQUEST,
+            "Reason must be at least 10 characters",
+        ));
+    }
 
     state
         .db
         .acquire()
         .await?
         .transaction(|transaction| {
-            Box::pin(async move { hide_quote_by_id(id, user, reason, transaction).await })
+            Box::pin(async move { hide_quote_by_id(id, user, reason.reason, transaction).await })
         })
         .await?;
     Ok(HttpResponse::Ok().body(""))
