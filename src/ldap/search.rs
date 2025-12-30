@@ -31,7 +31,7 @@ impl SearchAttrs {
     }
 
     #[must_use]
-    pub fn add(mut self, attr: &str) -> Self {
+    pub fn insert(mut self, attr: &str) -> Self {
         if !(self.attrs.contains(&attr.to_string())) {
             self.attrs.push(attr.to_string());
         }
