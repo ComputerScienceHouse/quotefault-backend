@@ -46,7 +46,11 @@ where
     T: FromStr,
     <T as FromStr>::Err: Debug,
 {
-    match entry.get(field).map(|f| f.get(0).unwrap().parse::<T>()) {
+    match entry
+        .get(field)
+        .and_then(|f| f.first())
+        .map(|f| f.parse::<T>())
+    {
         Some(Ok(r)) => Some(r),
         _ => None,
     }

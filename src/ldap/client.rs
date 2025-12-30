@@ -1,9 +1,8 @@
 #![allow(unused)]
 
-use async_trait::async_trait;
 use deadpool::managed::{self, Metrics};
 use ldap3::{drive, Ldap, LdapConnAsync, LdapError};
-use rand::prelude::SliceRandom;
+use rand::prelude::IndexedRandom;
 use rand::SeedableRng;
 use std::sync::Arc;
 use trust_dns_resolver::{
@@ -37,7 +36,6 @@ impl LdapManager {
     }
 }
 
-#[async_trait]
 impl managed::Manager for LdapManager {
     type Type = Ldap;
     type Error = LdapError;
@@ -45,7 +43,7 @@ impl managed::Manager for LdapManager {
     async fn create(&self) -> Result<Self::Type, Self::Error> {
         let (conn, mut ldap) = LdapConnAsync::new(
             self.ldap_servers
-                .choose(&mut rand::rngs::StdRng::from_entropy())
+                .choose(&mut rand::rngs::StdRng::from_os_rng())
                 .unwrap(),
         )
         .await

@@ -8,27 +8,26 @@ edition = "2021"
 [dependencies]
 actix-web = "4.4.0"
 anyhow = "1.0.75"
-async-trait = "0.1.74"
 lazy_static = "1.4.0"
-ldap3 = "0.11.3"
+ldap3 = "0.12.1"
 log = "0.4.20"
-rand = "0.8.5"
+rand = "0.9.2"
 regex = "1.10.2"
 serde = { version = "1.0.189", features=["derive"] }
 serde_json = "1.0.107"
 trust-dns-resolver = "0.23.1"
-deadpool = { version = "0.10.0", default-features = false, features = ["async-trait", "managed"] }
-sqlx = { version = "0.7.2", features = ["postgres", "chrono", "runtime-tokio-native-tls", "macros"] }
+deadpool = { version = "0.12.3", default-features = false, features = ["managed"] }
+sqlx = { version = "0.8.6", features = ["postgres", "chrono", "runtime-tokio-native-tls", "macros"] }
 utoipa = { version = "5.2.0", features = ["actix_extras", "chrono", "debug", "yaml"] }
-utoipa-swagger-ui = { version = "8", features = ["actix-web"] }
+utoipa-swagger-ui = { version = "9", features = ["actix-web"] }
 chrono = { version = "0.4.31", features = ["serde"] }
 dotenv = "0.15.0"
 isahc = { version = "1.7.0", features = ["json"] }
-base64 = "0.21.4"
+base64 = "0.22.1"
 openssl = "0.10.57"
 futures = "0.3.28"
 sha3 = "0.10.8"
-env_logger = "0.10.0"
+env_logger = "0.11.8"
 actix-cors = "0.7.0"
 rusty-hook = "0.11.2"
 

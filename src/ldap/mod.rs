@@ -18,7 +18,7 @@ pub async fn get_active_upperclassmen(client: &LdapClient) -> Result<Vec<LdapUse
     let res = ldap_search(
         client,
         "cn=users,cn=accounts,dc=csh,dc=rit,dc=edu",
-        format!("(&(memberOf=*active*)(!(memberOf=*intromember*)))").as_str(),
+        "(&(memberOf=*active*)(!(memberOf=*intromember*)))",
         None,
     )
     .await?;
